@@ -1,11 +1,10 @@
-// public/assets/js/app.js 
-(function () {
-  'use strict';
+// === RESET GLOBAL DE MODALES ANTES DE ABRIR CUALQUIER MODAL ===
+function forceCleanModals() {
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('padding-right');
+}
 
-  // Helper: detectar si el click ocurre dentro de IPTV (perfiles/cuentas)
-//   function __isIptvContext(el){
-//     try { return !!(el && el.closest && el.closest('#iptv-perfiles, #iptv-cuentas')); } catch(e) { return false; }
-//   }
 
 
 // /public/assets/js/app.js
@@ -16,7 +15,6 @@
     window.__isIptvContext = function(/* el */){ return false; };
   }
 })();
-
 
 
   function setVal(root, sel, val){
@@ -100,6 +98,7 @@
    public/assets/js/app.js — SWEETALERT TOAST + RELOAD (poner al INICIO)
    ======================================================================= */
 (function(){
+    return;
   window.okToastReload = function(title, ms){
     var delay = ms || 1200;
     if (!window.Swal) { setTimeout(function(){ location.reload(); }, delay); return; }
@@ -221,11 +220,10 @@ try {
         setVal(perfilModal, 'input[name="soles"]', row.soles);
         
         ['correo','password_plain'].forEach(n => {
-  const el = cuentaModal.querySelector(`input[name="${n}"]`);
+  const el = perfilModal.querySelector(`input[name="${n}"]`);
   if (el) el.readOnly = true; // readOnly para que IGUAL se envíe al backend
 });
-
-        const selPlan = perfilModal.querySelector('select[name="plan"]'); if (selPlan) selPlan.value = row.plan || 'individual';
+const selPlan = perfilModal.querySelector('select[name="plan"]'); if (selPlan) selPlan.value = row.plan || 'individual';
         const selCombo = perfilModal.querySelector('select[name="combo"]'); if (selCombo) selCombo.value = (/^(1|s[ií])$/i.test(String(row.combo||'')) ? '1' : '0');
 
         const selE = perfilModal.querySelector('select[name="estado"]'); if (selE) selE.value = row.estado || 'pendiente';
@@ -333,11 +331,10 @@ try {
         setVal(cuentaModal, 'input[name="soles"]', row.soles);
         
         ['correo','password_plain'].forEach(n => {
-  const el = cuentaModal.querySelector(`input[name="${n}"]`);
+  const el = perfilModal.querySelector(`input[name="${n}"]`);
   if (el) el.readOnly = true; // readOnly para que IGUAL se envíe al backend
 });
-
-        const selPlan = cuentaModal.querySelector('select[name="plan"]'); if (selPlan) selPlan.value = row.plan || 'individual';
+const selPlan = cuentaModal.querySelector('select[name="plan"]'); if (selPlan) selPlan.value = row.plan || 'individual';
         const selCombo = cuentaModal.querySelector('select[name="combo"]'); if (selCombo) selCombo.value = (/^(1|s[ií])$/i.test(String(row.combo||'')) ? '1' : '0');
 
         const selE = cuentaModal.querySelector('select[name="estado"]'); if (selE) selE.value = row.estado || 'pendiente';
@@ -403,55 +400,132 @@ try {
     modalEl.dataset.combo = (String(data.combo) === '1' ? '1' : '0');
     modalEl.dataset.streaming_id = data.streaming_id || '';
 
+    // --- Prefill directo para Familiar (crear hijo desde fila padre) ---
+    if (entidad === 'perfil_fam') {
+      try {
+        const form = modalEl.querySelector('form');
+        const setVal = (sel, val) => { const el = form && form.querySelector(sel); if (el) el.value = val; };
+        const priceInput = form && form.querySelector('input[name="soles"]');
+
+        const isEdit = !!(data && data.id);
+        if (!isEdit) {
+          // Datos base
+          setVal('input[name="action"]', 'create');
+          setVal('input[name="id"]', '');
+          setVal('input[name="correo"]', data.correo || '');
+          setVal('input[name="password_plain"]', data.password || '');
+          setVal('select[name="plan"]', (data.plan || 'premium'));
+          setVal('select[name="combo"]', (String(data.combo)==='1'?'1':'0'));
+          setVal('input[name="streaming_id"]', data.streaming_id || '');
+
+          // Precio: si viene ancla del primer hijo, usarla y bloquear edición
+          const head = document.getElementById('precioFamiliarHead');
+          const headVal = head && head.value ? head.value.trim() : '';
+          const anchor = (data && data.firstChildPrice) ? String(data.firstChildPrice).trim() : '';
+          const def = anchor || headVal || '';
+          setVal('input[name="soles"]', def);
+          if (priceInput) {
+            if (anchor) {
+              priceInput.readOnly = true;
+              priceInput.setAttribute('aria-readonly','true');
+            } else {
+              priceInput.readOnly = false;
+              priceInput.removeAttribute('aria-readonly');
+            }
+          }
+        }
+      } catch(_e){}
+    }
+
     const modal = bootstrap.Modal.getOrCreateInstance(modalEl);
     modal.show();
   }
 
-  // Click en fila padre (evita botones de acción)
- document.addEventListener('click', function (e) {
-  if (e.target.closest('.js-row-action')) return; // no abrir desde botones/acciones
-  const tr = e.target.closest('tr.js-parent-row');
-  if (!tr) return;
 
-  const entidad = tr.getAttribute('data-entidad');
-  // Soporta familiar y evita que la celda Plan dispare el grande
-  if (entidad !== 'perfil' && entidad !== 'cuenta' && entidad !== 'perfil_fam') return;
-  if (entidad === 'perfil_fam' && e.target.closest('.plan-cell-perfil')) return;
+
+// Router de clic para filas padre (Perfiles / Streaming familiar / Cuentas)
+document.addEventListener('click', function (e) {
+  // 1) NO disparar si el click viene de:
+  //    - botones explícitos (Editar, Borrar, etc.) → .js-row-action
+  //    - elementos marcados con data-no-row-modal="1"
+  //    - la celda de plan (plan-cell-perfil), que abre el modal chico
+  if (
+    e.target.closest('.js-row-action') ||
+    e.target.closest('[data-no-row-modal="1"]') ||
+    e.target.closest('.plan-cell-perfil')
+  ) {
+    return;
+  }
+
+  // 2) Solo filas padre dentro de la tabla de Perfiles
+  const row = e.target.closest('#perfilesTable tr.js-parent-row');
+  if (!row) return;
+
+  const modalCtx = (row.getAttribute('data-modal-context') || '').toLowerCase();
+  let entidad    = (row.getAttribute('data-entidad') || '').toLowerCase();
+
+  if (modalCtx === 'child') {
+    // Streaming familiar (hijos)
+    entidad = 'perfil_fam';
+  } else if (!entidad) {
+    // Por defecto, tratamos como "perfil"
+    entidad = 'perfil';
+  }
+  
+   // 🔥 LIMPIAR CUALQUIER BACKDROP COLGADO ANTES DE ABRIR MODAL PADRE/Hijo
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('padding-right');
 
   openPrefillModal(entidad, {
-    correo:       tr.getAttribute('data-correo') || '',
-    password:     tr.getAttribute('data-password') || '',
-    soles:        tr.getAttribute('data-soles') || '',
-    plan:         tr.getAttribute('data-plan') || 'individual',
-    combo:        tr.getAttribute('data-combo') || '0',
-    streaming_id: tr.getAttribute('data-streaming_id') || ''
+    correo:         row.getAttribute('data-correo') || '',
+    firstChildPrice:(row.getAttribute('data-first-child-price') || ''),
+    password:       row.getAttribute('data-password') || '',
+    soles:          row.getAttribute('data-soles') || '',
+    plan:           row.getAttribute('data-plan') || 'individual',
+    combo:          row.getAttribute('data-combo') || '0',
+    streaming_id:   row.getAttribute('data-streaming_id') || ''
   });
-});
+}, true);
 
 
 
-  // Enter accesible sobre fila padre
-  document.addEventListener('keydown', function (e) {
-  if (e.key !== 'Enter') return;
+
+
+// Enter accesible sobre fila padre
+document.addEventListener('click', function(e){
+  // ⛔ Si el click viene de la celda de PLAN de familiar, NO abrir modal grande
+  const planCell = e.target.closest('.plan-cell-familiar');
+  if (planCell && planCell.getAttribute('data-no-row-modal') === '1') {
+    return; // salimos y no seguimos a la lógica de modal grande
+  }
+
   if (e.target.closest('.js-row-action')) return;
+  const row = e.target.closest('tr.js-parent-row');
+  if (!row) return;
 
-  const tr = e.target.closest('tr.js-parent-row');
-  if (!tr) return;
-  e.preventDefault();
-
-  const entidad = tr.getAttribute('data-entidad');
+  const entidad = (row.getAttribute('data-entidad') || '').toLowerCase();
   if (entidad !== 'perfil' && entidad !== 'cuenta' && entidad !== 'perfil_fam') return;
+
+  // Si es familiar y estamos sobre la celda plan, no abrir el modal grande
   if (entidad === 'perfil_fam' && e.target.closest('.plan-cell-perfil')) return;
 
+  // 🔥 LIMPIAR CUALQUIER BACKDROP COLGADO ANTES DE ABRIR MODAL
+  document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+  document.body.classList.remove('modal-open');
+  document.body.style.removeProperty('padding-right');
+
   openPrefillModal(entidad, {
-    correo:       tr.getAttribute('data-correo') || '',
-    password:     tr.getAttribute('data-password') || '',
-    soles:        tr.getAttribute('data-soles') || '',
-    plan:         tr.getAttribute('data-plan') || 'individual',
-    combo:        tr.getAttribute('data-combo') || '0',
-    streaming_id: tr.getAttribute('data-streaming_id') || ''
+    correo:         tr.getAttribute('data-correo') || '',
+    firstChildPrice:(tr.getAttribute('data-first-child-price') || ''),
+    password:       tr.getAttribute('data-password') || '',
+    soles:          tr.getAttribute('data-soles') || '',
+    plan:           tr.getAttribute('data-plan') || 'individual',
+    combo:          tr.getAttribute('data-combo') || '0',
+    streaming_id:   tr.getAttribute('data-streaming_id') || ''
   });
 });
+
 
   
   
@@ -493,6 +567,8 @@ try {
       sppForm.dataset.bound = '1';
     }
   }
+; try{ sppSanitizePlanField(); }catch(_){}
+; try{ sppEnsureColorSelect(); }catch(_){}
 
   function sppSanitizePlanField() {
     if (!sppForm) return;
@@ -508,23 +584,48 @@ try {
     }
   }
 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
  // public/assets/js/app.js
 function sppPopulateDestinos(tipo) {
   const opts = [{ value: '', label: '— Solo cambiar plan —' }];
+
   if (tipo === 'stock') {
-    opts.push({ value: 'perfiles', label: 'Perfiles' });
-    opts.push({ value: 'cuentas',  label: 'Cuenta completa' });
-    // NUEVO: permitir enviar a Pausa desde STOCK
-    opts.push({ value: 'pausa',    label: 'Pausa' });
+    opts.push({ value: 'perfiles',  label: 'Perfiles' });
+    opts.push({ value: 'cuentas',   label: 'Cuenta completa' });
+    // Ya lo tenías:
+    opts.push({ value: 'pausa',     label: 'Pausa' });
+    // 👉 NUEVO: desde STOCK también poder mandar a Familiar
+    opts.push({ value: 'familiar',  label: 'Familiar' });
   } else { // pausa
-    opts.push({ value: 'perfiles', label: 'Perfiles' });
-    opts.push({ value: 'cuentas',  label: 'Cuenta completa' });
-    opts.push({ value: 'stock',    label: 'Stock' });
+    opts.push({ value: 'perfiles',  label: 'Perfiles' });
+    opts.push({ value: 'cuentas',   label: 'Cuenta completa' });
+    opts.push({ value: 'stock',     label: 'Stock' });
+    // 👉 NUEVO: desde PAUSA también poder mandar a Familiar
+    opts.push({ value: 'familiar',  label: 'Familiar' });
   }
+
   if (sppDestino) {
-    sppDestino.innerHTML = opts.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
+    sppDestino.innerHTML = opts
+      .map(o => `<option value="${o.value}">${o.label}</option>`)
+      .join('');
   }
 }
+
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
+ 
 
 
   function normalizePlan(p) {
@@ -594,40 +695,65 @@ function sppPopulateDestinos(tipo) {
 
 
   function sppOpenFromCell(cell) {
-    sppEnsureRefs();
-    sppSanitizePlanField();
-    if (!sppForm) return;
+  sppEnsureRefs();
+  sppSanitizePlanField();
+  if (!sppForm || !cell) return;
 
-    // Evitar modal de fila
-    cell.setAttribute('data-no-row-modal', '1');
-    lastPlanCellSPP = cell;
+  // Evitar que el click en plan dispare el modal de fila
+  cell.setAttribute('data-no-row-modal', '1');
+  lastPlanCellSPP = cell;
 
-    const tipo = (cell.getAttribute('data-tipo') ||
-                 (cell.classList.contains('plan-cell-stock') ? 'stock' : 'pausa')).toLowerCase();
-    const id   = cell.getAttribute('data-id') || cell.dataset.id || '';
-    const planRaw = cell.getAttribute('data-plan') || cell.textContent;
-    const plan = normalizePlan(planRaw);
+  // === tipo + id ===
+  const tipo = (cell.getAttribute('data-tipo') ||
+               (cell.classList.contains('plan-cell-pausa') ? 'pausa' : 'stock')).toLowerCase();
+  const id = (cell.getAttribute('data-id') || cell.dataset.id || '').trim();
+  if (!id) { console.warn('[SPP] Falta data-id en la celda de plan'); return; }
 
-    sppId.value   = id;
-    sppTipo.value = tipo;
-    sppPlan.value = plan;
-    sppPopulateDestinos(tipo);
-
-    // Preseleccionar color actual de la fila
-    const row = cell.closest('tr');
-    if (sppColor) {
-      const current = getRowColorValue(row);
-      sppColor.value = current || '';
-    }
-
-    if (!sppModal) {
-      const el = document.getElementById('modalCambiarPlanStockPausa');
-      if (el && window.bootstrap?.Modal) {
-        sppModal = bootstrap.Modal.getOrCreateInstance(el);
-      }
-    }
-    sppModal && sppModal.show();
+  // === plan actual (data-plan -> texto del ancla -> texto de la celda) ===
+  let planRaw = cell.getAttribute('data-plan');
+  if (!planRaw) {
+    const a = cell.querySelector('.js-edit-plan, [data-role="plan-text"], a');
+    planRaw = a ? a.textContent : cell.textContent;
   }
+  planRaw = (planRaw || '').trim();
+  const plan = normalizePlan(planRaw); // debe existir: individual/estándar/premium
+
+  // === setear form ===
+  sppId.value = id;
+  sppTipo.value = (tipo === 'pausa') ? 'pausa' : 'stock';
+
+  if (sppPlan) {
+    sppPlan.value = plan;
+    // Fallback si por acentos la opción no existe:
+    if (!Array.from(sppPlan.options).some(o => o.value === sppPlan.value)) {
+      sppPlan.value = 'individual';
+    }
+  }
+
+  // Popular destinos según pestaña actual
+  sppPopulateDestinos(sppTipo.value);
+
+  // Preseleccionar color actual del <tr>
+  const tr = cell.closest('tr');
+  if (sppColor) {
+    const current = getRowColorValue(tr);
+    sppColor.value = current || '';
+  }
+
+  // === abrir modal ===
+  if (!sppModal) {
+    const el = document.getElementById('modalCambiarPlanStockPausa');
+    if (el && window.bootstrap?.Modal) {
+      sppModal = bootstrap.Modal.getOrCreateInstance(el);
+    }
+  }
+  if (sppModal) {
+    sppModal.show();
+    // focus al select plan para UX
+    setTimeout(() => { try { sppPlan && sppPlan.focus(); } catch(_){} }, 0);
+  }
+}
+
 
   // Apertura por click (captura)
   document.addEventListener('click', function (ev) {
@@ -646,85 +772,117 @@ function sppPopulateDestinos(tipo) {
     sppOpenFromCell(cell);
   }, true);
 
-  async function sppOnSubmit(e) {
-    e.preventDefault();
-    if (sppSubmitting) return;
-    sppSubmitting = true;
+  // === Reemplazo completo ===
+async function sppOnSubmit(ev) {
+  ev.preventDefault(); ev.stopPropagation();
+  if (!sppForm || sppForm.dataset.sending === '1') return;
 
-    const submitBtn = sppForm?.querySelector('button[type="submit"]');
-    submitBtn && (submitBtn.disabled = true);
+  // Construir FormData y FORZAR que los campos clave viajen
+  const fd = new FormData(sppForm);
 
-    try {
-      const fd = new FormData(sppForm);
-      const payload = new URLSearchParams();
-      ['id', 'tipo', 'plan', 'destino'].forEach(k => payload.append(k, (fd.get(k) || '').toString().trim()));
-      // Mandamos color también (el backend lo ignorará; es solo UI por ahora)
-      if (fd.get('color') != null) payload.append('color', fd.get('color').toString());
+  // id / tipo
+  const id = +( (sppId && sppId.value) || (fd.get('id') || 0) );
+  const tipo = ( (sppTipo && sppTipo.value) || (fd.get('tipo') || '') ).toLowerCase() === 'pausa' ? 'pausa' : 'stock';
+  fd.set('id', String(id));
+  fd.set('tipo', tipo);
 
-      const res = await fetch('ajax/stock_pausa_plan_update.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' },
-        body: payload.toString()
-      });
+  // plan (forzado + normalizado)
+  let planJs = (sppPlan && sppPlan.value) || (fd.get('plan') || '');
+  planJs = normalizePlan( (planJs || '').toString().trim() );
+  fd.set('plan', planJs);
 
-      const raw = await res.text();
-      if (!res.ok) throw new Error(`HTTP ${res.status} — ${raw || '(respuesta vacía)'}`);
+  // destino ('' = solo cambiar plan)
+  const destinoJs = (sppDestino && sppDestino.value) || (fd.get('destino') || '');
+  fd.set('destino', (destinoJs || '').toString().trim());
 
-      let data;
-      try { data = JSON.parse(raw); }
-      catch { throw new Error('Respuesta no-JSON del servidor'); }
+  // color (enviar siempre, vacío si no hay)
+  const colorJs = (sppColor && sppColor.value) || (fd.get('color') || '');
+  fd.set('color', (colorJs || '').toString().trim());
 
-      if (!data.ok) throw new Error(data.error || 'No se pudo guardar.');
+  if (!id || !planJs) {
+    if (window.Swal?.fire) await Swal.fire({icon:'warning',title:'Faltan datos',text:'ID y Plan son obligatorios.'});
+    else alert('Faltan datos');
+    return;
+  }
 
-      // Éxito
-      sppModal && sppModal.hide();
+  try {
+    sppForm.dataset.sending = '1';
 
-      const selectedColor = (fd.get('color') || '').toString();
+    const res = await fetch('ajax/stock_pausa_plan_update.php', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin'
+    });
 
-      const reloadAfterToast = () => {
-        const active = document.querySelector('.nav-link.active[data-bs-toggle="tab"]');
-        const hash = (active && (active.getAttribute('data-bs-target') || active.getAttribute('href'))) || location.hash || '';
-        setTimeout(() => {
-          if (hash && hash.startsWith('#')) location.hash = hash;
-          location.reload();
-        }, 50);
-      };
+    const js = await res.json().catch(() => ({ ok:false, error:'Respuesta inválida' }));
+    if (!res.ok || !js.ok) throw new Error(js.error || ('HTTP '+res.status));
 
-      if (data.moved_to) {
-        const row = lastPlanCellSPP?.closest('tr.js-parent-row');
-        if (row) row.remove();
-        if ((data.moved_to || '').toLowerCase() === 'pausa') {
-  try { sessionStorage.setItem('activeTab', '#pausa'); } catch (_) {}
-}
+    // Feedback inmediato en UI (color + texto del plan en la celda)
+    const planSel = tipo === 'stock'
+      ? '.plan-cell-stock[data-id="'+id+'"]'
+      : '.plan-cell-pausa[data-id="'+id+'"]';
 
-        if (window.Swal) {
-          Swal.fire({ toast:true, position:'top', timer:1200, showConfirmButton:false, icon:'success', title:'Movido a ' + data.moved_to, didClose: reloadAfterToast });
-        } else {
-          reloadAfterToast();
-        }
-      } else if (data.updated) {
-        // Actualiza plan en UI
-        const newPlan = (fd.get('plan') || '').toString();
-        lastPlanCellSPP.textContent = newPlan;
-        lastPlanCellSPP.setAttribute('data-plan', newPlan);
-
-        // Aplica color a la fila (si se eligió)
-        applyRowColor(lastPlanCellSPP.closest('tr'), selectedColor);
-
-        if (window.Swal) {
-          Swal.fire({ toast:true, position:'top', timer:1200, showConfirmButton:false, icon:'success', title:'Cambios guardados' });
+    const planCell = document.querySelector(planSel);
+    if (planCell) {
+      // 1) Color
+      const tr = planCell.closest('tr');
+      if (tr) {
+        tr.classList.remove('row-color-rojo','row-color-azul','row-color-verde','row-color-blanco');
+        tr.removeAttribute('data-color');
+        if (colorJs && colorJs !== 'restablecer') {
+          tr.classList.add('row-color-' + colorJs);
+          tr.setAttribute('data-color', colorJs);
         }
       }
-
-    } catch (err) {
-      const msg = String(err?.message || err);
-      if (window.Swal) Swal.fire({ icon: 'error', title: 'Error', text: msg });
-      else alert(msg);
-    } finally {
-      sppSubmitting = false;
-      submitBtn && (submitBtn.disabled = false);
+      // 2) Plan (texto + data-*)
+      planCell.setAttribute('data-plan', planJs);
+      const a = planCell.querySelector('.js-edit-plan, [data-role="plan-text"], a');
+      if (a) {
+        a.textContent = planJs;
+      } else if (planCell.childElementCount === 0) {
+        planCell.textContent = planJs;
+      } else {
+        let span = planCell.querySelector('span[data-plan-label]');
+        if (!span) {
+          span = document.createElement('span');
+          span.setAttribute('data-plan-label','1');
+          planCell.insertBefore(span, planCell.firstChild);
+        }
+        span.textContent = planJs + ' ';
+      }
     }
+
+    // Cerrar modal
+        // Cerrar modal
+    try {
+      const modalEl = sppForm.closest('.modal') || document.querySelector('.modal.show');
+      if (window.bootstrap?.Modal && modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    } catch(_) {}
+
+    // ✅ Siempre mostrar éxito y recargar la página para ver los cambios
+    if (window.Swal?.fire) {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Actualizado',
+        timer: 800,
+        showConfirmButton: false
+      });
+    }
+
+    location.reload();
+
+  } catch (err) {
+    console.error('[SPP] Error submit:', err);
+    if (window.Swal?.fire) Swal.fire({icon:'error',title:'No se pudo guardar',text:String(err || 'Error')});
+    else alert('No se pudo guardar: ' + err);
+  } finally {
+    delete sppForm.dataset.sending;
   }
+}
+
+}
+
+
 })();
 
 
@@ -815,53 +973,9 @@ function sppPopulateDestinos(tipo) {
 // === Stock/Pausa: abrir modal chico en CAPTURA ===
 let sppSubmitting = false;
 
-async function sppOnSubmit(e){
-  e.preventDefault();
 
-  // ✅ Anti-doble-submit
-  if (sppSubmitting) return;
-  sppSubmitting = true;
+/* duplicate sppOnSubmit removed */
 
-  // Deshabilita botón mientras envía
-  const submitBtn = sppForm?.querySelector('button[type="submit"]');
-  submitBtn && (submitBtn.disabled = true);
-
-  try {
-    const fd = new FormData(sppForm);
-    const payload = new URLSearchParams();
-    ['id','tipo','plan','destino'].forEach(k=>payload.append(k, (fd.get(k)||'').toString().trim()));
-
-    const res  = await fetch('ajax/stock_pausa_plan_update.php', {
-      method:'POST',
-      headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},
-      body: payload.toString()
-    });
-    const data = await res.json();
-
-    if (!data?.ok) {
-      const msg = data?.error || 'No se pudo guardar.';
-      return (window.Swal ? Swal.fire({icon:'error',title:'Error',text:msg}) : alert(msg));
-    }
-
-    if (sppModal) sppModal.hide();
-
-    if (data.moved_to) {
-      const row = lastPlanCellSPP?.closest('tr.js-parent-row');
-      if (row) row.remove();
-      const tail = data.dedup ? ' (deduplicado)' : '';
-      window.Swal ? Swal.fire({toast:true,position:'top',timer:1800,showConfirmButton:false,icon:'success',title:'Movido a '+data.moved_to+tail}) : 0;
-    } else if (data.updated) {
-      lastPlanCellSPP.textContent = (fd.get('plan')||'').toString();
-      lastPlanCellSPP.setAttribute('data-plan',(fd.get('plan')||'').toString());
-      window.Swal ? Swal.fire({toast:true,position:'top',timer:1500,showConfirmButton:false,icon:'success',title:'Plan actualizado'}) : 0;
-    }
-  } catch (err) {
-    window.Swal ? Swal.fire({icon:'error',title:'Error',text:String(err)}) : alert(String(err));
-  } finally {
-    sppSubmitting = false;
-    submitBtn && (submitBtn.disabled = false);
-  }
-}
 
 let lastPlanCellSPP = null;
 let sppModal, sppForm, sppId, sppTipo, sppPlan, sppDestino;
@@ -883,18 +997,7 @@ function sppEnsureRefs() {
   }
 }
 
-function sppPopulateDestinos(tipo) {
-  const opts = [{value:'',label:'— Solo cambiar plan —'}];
-  if (tipo === 'stock') {
-    opts.push({value:'perfiles',label:'Perfiles'});
-    opts.push({value:'cuentas', label:'Cuenta completa'});
-  } else {
-    opts.push({value:'perfiles',label:'Perfiles'});
-    opts.push({value:'cuentas', label:'Cuenta completa'});
-    opts.push({value:'stock',   label:'Stock'});
-  }
-  sppDestino.innerHTML = opts.map(o=>`<option value="${o.value}">${o.label}</option>`).join('');
-}
+
 
 function sppOpenFromCell(cell){
   sppEnsureRefs();
@@ -971,208 +1074,23 @@ async function sppOnSubmit(e){
 
 
 function sppSanitizePlanField() {
+  // form y select (ajusta si usas otros IDs)
+  const sppForm = document.getElementById('formPlanStockPausa');
+  const sppPlan = document.getElementById('spp_plan');
   if (!sppForm) return;
-  // 1) Elimina inputs ocultos duplicados de 'plan'
-  sppForm.querySelectorAll('input[name="plan"]').forEach(el => {
-    if (el.type === 'hidden') el.remove();
-  });
-  // 2) Asegura que el <select> esté visible y usable
+
+  // 1) Elimina inputs ocultos duplicados que puedan pisar el valor del <select>
+  sppForm.querySelectorAll('input[name="plan"][type="hidden"]').forEach(el => el.remove());
+
+  // 2) Asegura que el <select> esté visible y con las clases correctas
   if (sppPlan) {
     sppPlan.style.removeProperty('display');
     sppPlan.hidden = false;
     sppPlan.removeAttribute('aria-hidden');
-    // Reafirmar sus clases por si algún script las tocó
-    sppPlan.classList.add('form-select','form-select-sm');
-    sppPlan.disabled = false;
+    sppPlan.classList.add('form-select', 'form-select-sm');
   }
 }
 
-
-
-})();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// ======== STREAMING (Dashboard) — Apertura programática ========
-(function(){
-  'use strict';
-
-  const modalEl = document.getElementById('streamingModal');
-  if (!modalEl) return;
-
-  const modal = (typeof bootstrap !== 'undefined')
-    ? bootstrap.Modal.getOrCreateInstance(modalEl)
-    : null;
-
-  // helpers
-  function setVal(sel, val){
-    const el = modalEl.querySelector(sel);
-    if (!el) return;
-    el.value = (val ?? '');
-  }
-
-  function setText(sel, txt){ const el = modalEl.querySelector(sel); if(el) el.textContent = txt ?? ''; }
-  function parseRowAttr(btn){ const raw = btn?.getAttribute('data-row'); if(!raw) return null; try { return JSON.parse(raw); } catch { return null; } }
-  function rowFromDataset(btn){
-    if (!btn) return null;
-    const d = btn.dataset || {};
-    if (!d.id && !d.nombre && !d.plan && !d.precio && !d.logo) return null;
-    return { id:d.id||'', nombre:d.nombre||'', plan:d.plan||'', precio:d.precio||'', logo:d.logo||'' };
-  }
-  function rowFromCard(btn){
-    const card = btn?.closest('.card'); if(!card) return null;
-    const nombre = card.querySelector('.card-title')?.textContent?.trim() || '';
-    const plan   = card.querySelector('.card-text small')?.textContent?.trim() || '';
-    const precio = (card.querySelector('.fw-semibold')?.textContent || '').replace(/[^\d.,-]/g,'').trim();
-    const href   = card.querySelector('a[href*="streaming.php?id="]')?.getAttribute('href') || '';
-    const id     = (href.match(/id=(\d+)/)||[])[1] || '';
-    return { id, nombre, plan, precio };
-  }
-
-  function resetModal(){
-    const form = modalEl.querySelector('form'); if (form) form.reset();
-    const preview = modalEl.querySelector('#logoPreview'); if (preview) { preview.src=''; preview.classList.add('d-none'); }
-  }
-
-  function openCreate(){
-    resetModal();
-    setVal('input[name="action"]', 'create');
-    setVal('input[name="id"]', '');
-    setVal('input[name="nombre"]', '');
-    setVal('input[name="plan"]', '');
-    setVal('input[name="precio"]', '');
-    setText('.modal-title', 'Agregar Streaming');
-    const sb = modalEl.querySelector('button[type="submit"]'); if (sb) sb.textContent = 'Guardar';
-    modal && modal.show();
-  }
-
-  function openEdit(fromBtn){
-    resetModal();
-    const row = parseRowAttr(fromBtn) || rowFromDataset(fromBtn) || rowFromCard(fromBtn) || {};
-    setVal('input[name="action"]', 'update');
-    setVal('input[name="id"]', row.id);
-    setVal('input[name="nombre"]', row.nombre);
-    setVal('input[name="plan"]', row.plan);
-    setVal('input[name="precio"]', row.precio);
-
-    // preview de logo actual (si hay)
-    if (row.logo) {
-      const file = String(row.logo).split('/').pop(); // filename
-      const rel  = 'uploads/' + file;                 // relativo a /public
-      const preview = modalEl.querySelector('#logoPreview');
-      if (preview) { preview.src = rel; preview.classList.remove('d-none'); }
-    }
-
-    setText('.modal-title', 'Editar Streaming');
-    const sb = modalEl.querySelector('button[type="submit"]'); if (sb) sb.textContent = 'Guardar cambios';
-    modal && modal.show();
-  }
-
-  // Interceptamos clicks en los botones y abrimos el modal nosotros
-  document.addEventListener('click', function(e){
-    const editBtn = e.target.closest('.btn-edit-streaming');
-    if (editBtn) {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      openEdit(editBtn);
-      return;
-    }
-    const addBtn = e.target.closest('.btn-add-streaming');
-    if (addBtn) {
-      e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation();
-      openCreate();
-    }
-  });
-
-  modalEl.addEventListener('show.bs.modal', function(ev){ /* noop */ });
-
-  // Validación cliente de logo (2MB / JPG-PNG-GIF)
-  const logoInput = modalEl.querySelector('input[type="file"][name="logo"]');
-  if (logoInput) {
-    const MAX = 2 * 1024 * 1024, TYPES = ['image/jpeg','image/png','image/gif'];
-    logoInput.addEventListener('change', function(){
-      const f = this.files?.[0]; if (!f) return;
-      if (f.size > MAX) { window.Swal && Swal.fire({icon:'warning', title:'Archivo muy grande', text:'Máximo 2MB.'}); this.value=''; return; }
-      if (!TYPES.includes(f.type)) { window.Swal && Swal.fire({icon:'warning', title:'Formato inválido', text:'Solo JPG, PNG o GIF.'}); this.value=''; return; }
-      const preview = modalEl.querySelector('#logoPreview');
-      if (preview) { preview.src = URL.createObjectURL(f); preview.classList.remove('d-none'); }
-    });
-  }
-
-  document.addEventListener('submit', function (e) {
-    const f = e.target;
-    if (!f.matches('.form-delete-streaming')) return;
-    e.preventDefault();
-    if (!window.Swal) { f.submit(); return; }
-    Swal.fire({
-      title: '¿Eliminar streaming?',
-      text: 'Esta acción no se puede deshacer.',
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      confirmButtonText: 'Sí, borrar',
-      cancelButtonText: 'Cancelar'
-    }).then(r => { if (r.isConfirmed) f.submit(); });
-  });
-
-})();
 
 
 
@@ -1794,7 +1712,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (p.length !== 3) return '';
     var d = new Date(p[0], p[1]-1, p[2] + days);
     var y = d.getFullYear();
-    var m = String(d.getMonth()+1).padStart(2,'0');
+    var m = String(d.getMonth()).padStart(2,'0');
     var dd = String(d.getDate()).padStart(2,'0');
     return y + '-' + m + '-' + dd;
   }
@@ -1804,7 +1722,7 @@ document.addEventListener('DOMContentLoaded', function () {
   var fi = scope.querySelector('input[name="fecha_inicio"]');
   var ff = scope.querySelector('input[name="fecha_fin"]');
   if (fi && ff && (!ff.value || ff.value === '')) {
-    ff.value = addDaysISO(fi.value || (new Date().toISOString().slice(0,10)), 31);
+    ff.value = addDaysISO(fi.value || (new Date().toISOString().slice(0,10)), 30);
   }
 
   // Al cambiar fecha_inicio, actualizar fecha_fin
@@ -1812,7 +1730,7 @@ document.addEventListener('DOMContentLoaded', function () {
     if (!e.target.matches('input[name="fecha_inicio"]')) return;
     var form = e.target.form || scope;
     var fin = form.querySelector('input[name="fecha_fin"]') || ff;
-    if (fin) fin.value = addDaysISO(e.target.value, 31);
+    if (fin) fin.value = addDaysISO(e.target.value, 30);
   }, true);
 });
 
@@ -2730,7 +2648,13 @@ document.addEventListener('show.bs.modal', function (ev) {
 
 
 
-// === Modal Agregar CUENTA: fecha_inicio = hoy (local) y fecha_fin = +31 días (solo UI) ===
+
+
+
+
+
+
+// === Modal Agregar CUENTA: fecha_inicio = hoy y fecha_fin = +30 días (solo UI) ===
 (function () {
   const modalAgregarCuenta = document.getElementById('modalAgregarCuenta');
   if (!modalAgregarCuenta) return;
@@ -2743,27 +2667,26 @@ document.addEventListener('show.bs.modal', function (ev) {
     return x;
   };
 
-  // Al abrir el modal: setear hoy y +31
+  // Al abrir el modal: usar helper genérico con 30 días
   modalAgregarCuenta.addEventListener('show.bs.modal', function () {
-    const fi = modalAgregarCuenta.querySelector('input[name="fecha_inicio"]');
-    const ff = modalAgregarCuenta.querySelector('input[name="fecha_fin"]');
-    if (!fi || !ff) return;
-
-    const today = new Date(); // local
-    fi.value = toYMD(today);
-    ff.value = toYMD(addDays(today, 31));
+    const form = modalAgregarCuenta.querySelector('form');
+    if (window.setDefaultFechas && form) {
+      setDefaultFechas(form, 30); // hoy y hoy+30
+    }
   });
 
-  // Si el usuario cambia fecha_inicio manualmente: recalcular fecha_fin = +31 (solo UI)
+  // Si el usuario cambia fecha_inicio manualmente: recalcular fecha_fin = +30 (solo UI)
   modalAgregarCuenta.addEventListener('change', function (ev) {
     if (!ev.target || ev.target.name !== 'fecha_inicio') return;
+
     const fiVal = ev.target.value;
     const ff = modalAgregarCuenta.querySelector('input[name="fecha_fin"]');
     if (!ff || !fiVal) return;
 
     const base = new Date(fiVal);
     if (isNaN(base.getTime())) return;
-    ff.value = toYMD(addDays(base, 31));
+
+    ff.value = toYMD(addDays(base, 30));
   });
 })();
 
@@ -2794,15 +2717,7 @@ document.addEventListener('show.bs.modal', function (ev) {
     return x;
   }
 
-  modalAgregarCuenta.addEventListener('show.bs.modal', function () {
-    const fi = modalAgregarCuenta.querySelector('#fecha_inicio_cuenta, input[name="fecha_inicio"]');
-    const ff = modalAgregarCuenta.querySelector('#fecha_fin_cuenta, input[name="fecha_fin"]');
-    if (!fi || !ff) return;
-
-    const today = new Date();
-    fi.value = toYMD(today);
-    ff.value = toYMD(addDays(today, 31));
-  });
+  
 })();
 
 
@@ -3405,13 +3320,12 @@ function __resolveStreamingIdForStock() {
 
 
 
-// === Patch: inyectar "enviar_a" en el AJAX de Perfiles (modal pequeño) ===
+// === Patch: fix URL rota de IPTV + inyectar "enviar_a" en AJAX de Perfiles ===
 (function () {
   if (window.__patch_perfiles_enviarA__) return; // idempotente
   window.__patch_perfiles_enviarA__ = true;
 
   function getEnviarA() {
-    // Lee el valor actual del selector "Enviar a" en el modal pequeño de Perfiles
     const modal =
       document.getElementById('modalCambiarPlanPerfil') ||
       document.getElementById('modalCambiarPlan') ||
@@ -3425,44 +3339,65 @@ function __resolveStreamingIdForStock() {
     return (val === 'stock' || val === 'pausa') ? val : 'none';
   }
 
-  // Monkey-patch de fetch SOLO para ajax/perfiles_plan_update.php
   const _fetch = window.fetch;
   window.fetch = function (input, init) {
     try {
-      const url = (typeof input === 'string') ? input : (input && input.url) ? input.url : '';
+      let url = (typeof input === 'string')
+        ? input
+        : (input && input.url)
+        ? input.url
+        : '';
+
+      // 0) HOTFIX IPTV: si la URL contiene el placeholder PHP de SAVE_URL, la
+      //    reemplazamos por el endpoint correcto ajax/iptv_save.php
+      if (url && (
+        url.indexOf('%3C?=') !== -1 ||                 // versión URL-encoded
+        url.indexOf('htmlspecialchars($SAVE_URL') !== -1 || // texto plano
+        url.indexOf('<?= $SAVE_URL') !== -1
+      )) {
+        const fixedUrl = 'ajax/iptv_save.php';
+
+        if (typeof input === 'string') {
+          input = fixedUrl;
+        } else if (input && input.url) {
+          // Clonamos la Request pero con nueva URL
+          input = new Request(fixedUrl, input);
+        }
+
+        url = fixedUrl;
+      }
+
+      // 1) Patch original: añadir "enviar_a" sólo para perfiles_plan_update.php
       if (url && url.indexOf('perfiles_plan_update.php') !== -1) {
         const enviarA = getEnviarA(); // 'stock' | 'pausa' | 'none'
-        // Solo si es POST añadimos el parámetro
         const method = (init && init.method ? String(init.method) : 'GET').toUpperCase();
+
         if (method === 'POST') {
-          // 1) Body como URLSearchParams
           if (init && init.body instanceof URLSearchParams) {
             const params = new URLSearchParams(init.body);
             params.set('enviar_a', enviarA);
             init.body = params;
-          }
-          // 2) Body como FormData
-          else if (init && init.body instanceof FormData) {
+          } else if (init && init.body instanceof FormData) {
             init.body.set('enviar_a', enviarA);
-          }
-          // 3) Body como string x-www-form-urlencoded
-          else if (init && typeof init.body === 'string') {
-            const hasParams = init.headers && (
-              (init.headers.get && init.headers.get('Content-Type')) ||
-              (typeof init.headers === 'object' && (init.headers['Content-Type'] || init.headers['content-type']))
-            );
-            const ctype = hasParams ? (init.headers.get ? init.headers.get('Content-Type') : (init.headers['Content-Type'] || init.headers['content-type'])) : '';
+          } else if (init && typeof init.body === 'string') {
+            const headers = init.headers || {};
+            let ctype = '';
+
+            if (headers.get && typeof headers.get === 'function') {
+              ctype = headers.get('Content-Type') || headers.get('content-type') || '';
+            } else if (typeof headers === 'object') {
+              ctype = headers['Content-Type'] || headers['content-type'] || '';
+            }
+
             if (ctype && ctype.indexOf('application/x-www-form-urlencoded') !== -1) {
               const sep = init.body && init.body.length ? '&' : '';
               init.body = init.body + sep + 'enviar_a=' + encodeURIComponent(enviarA);
             }
-          }
-          // 4) Si no hay body, creamos uno mínimo
-          else if (init) {
+          } else if (init) {
             const params = new URLSearchParams();
             params.set('enviar_a', enviarA);
-            // no sobrescribimos otros campos; si no existen, el backend los ignorará
             init.body = params;
+
             init.headers = init.headers || {};
             if (init.headers.append) {
               init.headers.append('Content-Type', 'application/x-www-form-urlencoded; charset=UTF-8');
@@ -3472,10 +3407,14 @@ function __resolveStreamingIdForStock() {
           }
         }
       }
-    } catch (_) { /* silencioso */ }
+    } catch (_) {
+      // silencioso
+    }
+
     return _fetch.apply(this, arguments);
   };
 })();
+
 
 
 
@@ -3650,7 +3589,7 @@ function __resolveStreamingIdForStock() {
 
   // Guardar último ID clickeado en la celda Plan (perfiles)
   document.addEventListener('click', function (ev) {
-    const td = ev.target.closest('td.plan-cell-perfil, [data-role="plan-cell-perfil"]');
+    const td = ev.target.closest('#perfiles td.plan-cell-perfil, #perfiles [data-role="plan-cell-perfil"]');
     if (!td) return;
     const id = (td.getAttribute('data-id') || td.dataset.id || '').replace(/\D+/g, '');
     if (!id) return;
@@ -4383,27 +4322,37 @@ if (tr) {
     return v;
   }
 
-  document.addEventListener('submit', function (ev) {
-    const form = ev.target;
-    if (!form || !(form instanceof HTMLFormElement)) return;
+  document.addEventListener('submit', function (e) {
+  const form = e.target;
 
-    // Solo actuar en formularios de agregar/editar Perfil o Cuenta (IDs existentes)
-    const isPerfil = /perfil/i.test(form.id || '') || form.action.includes('PerfilController.php');
-    const isCuenta = /cuenta/i.test(form.id || '') || form.action.includes('CuentaController.php');
-    if (!isPerfil && !isCuenta) return;
+  // 🔒 1) Asegurarnos de que realmente es un <form>
+  if (!form || !form.tagName || form.tagName.toLowerCase() !== 'form') {
+    return;
+  }
 
-    const inp = form.querySelector('input[name="whatsapp"]');
-    if (inp) {
-      const v = normPhone(inp.value);
-      // validación mínima cliente (mismo patrón del input)
-      if (v && !/^\+?\d{6,15}$/.test(v)) {
-        ev.preventDefault();
-        if (window.Swal) Swal.fire({icon:'error',title:'WhatsApp inválido',text:'Usa formato +[código país][número], ej. +5491122233344'});
-        return;
-      }
-      inp.value = v;
-    }
-  }, true);
+  // 🔒 2) Normalizar id y action como strings seguros
+  const rawId     = typeof form.id === 'string' ? form.id : '';
+  const rawAction = (typeof form.getAttribute === 'function'
+                      ? (form.getAttribute('action') || '')
+                      : '');
+
+  const formId     = rawId.toLowerCase();
+  const formAction = rawAction.toLowerCase();
+
+  // 🔒 3) Solo actuar en formularios de PERFIL o CUENTA
+  const isPerfil = formId.includes('perfil') || formAction.includes('perfilcontroller.php');
+  const isCuenta = formId.includes('cuenta') || formAction.includes('cuentacontroller.php');
+
+  if (!isPerfil && !isCuenta) {
+    // 👈 Si no es ninguno de esos, salimos y no tocamos nada (ni IPTV, ni streamings)
+    return;
+  }
+
+  // 🔽🔽🔽 A partir de aquí va el código que ya tenías para perfíl/cuenta
+  // e.preventDefault();
+  // ...
+});
+
 })();
 
 
@@ -5440,7 +5389,7 @@ document.addEventListener('click', function(e){
 
     // Si fecha_fin está vacía, calcularla con la regla actual (+31 días)
     if (!ff.value && fi.value) {
-      ff.value = addDaysYYYYMMDD(fi.value, 31);
+      ff.value = addDaysYYYYMMDD(fi.value, 30);
     }
 
     // Guardamos valores iniciales por si necesitas auditoría o comparación
@@ -5462,7 +5411,7 @@ document.addEventListener('click', function(e){
 
     // Recalculamos siempre que el usuario cambie inicio
     if (/^\d{4}-\d{2}-\d{2}$/.test(fi.value)) {
-      ff.value = addDaysYYYYMMDD(fi.value, 31);
+      ff.value = addDaysYYYYMMDD(fi.value, 30);
     }
   }, true);
 
@@ -8959,7 +8908,8 @@ document.addEventListener('shown.bs.modal', function (ev) {
           : alert('Usuario, contraseña y URL son obligatorios.')
         );
         return;
-      }/*
+      }*/
+      
       
       if (!/^https?:\/\//i.test(urlVal)) urlVal = 'https://' + urlVal;
 
@@ -9141,11 +9091,14 @@ document.addEventListener('shown.bs.modal', function (ev) {
         let usuario = (form.querySelector('[name="usuario"]')?.value || '').trim();
         let pass    = (form.querySelector('[name="password_plain"]')?.value || '').trim();
         let urlVal  = (form.querySelector('[name="url"]')?.value || '').trim();
-        if (!usuario || !pass || !urlVal) {
+        
+        /*if (!usuario || !pass || !urlVal) {
           window.Swal ? Swal.fire({icon:'warning',title:'Faltan datos',text:'Usuario, contraseña y URL son obligatorios.'})
                       : alert('Usuario, contraseña y URL son obligatorios.');
           return;
-        }
+        }*/
+        
+        
         if (!/^https?:\/\//i.test(urlVal)) urlVal = 'https://' + urlVal;
 
         const fd = new FormData(form);
@@ -9748,8 +9701,10 @@ document.addEventListener('click', function(ev){
 
 
 (function () {
-  const SAVE_URL   = '<?= htmlspecialchars($SAVE_URL, ENT_QUOTES) ?>';
-  const DELETE_URL = '<?= htmlspecialchars($DELETE_URL, ENT_QUOTES) ?>';
+  (function () {
+  const SAVE_URL   = (typeof BASE !== 'undefined' ? BASE : '') + 'ajax/iptv_save.php';
+  const DELETE_URL = ''; // ya NO usamos esta constante
+
 
   function val(form,n){return (form.querySelector(`[name="${n}"]`)?.value||'').trim();}
   function checked(form,n){return !!form.querySelector(`[name="${n}"]`)?.checked;}
@@ -9788,33 +9743,88 @@ document.addEventListener('click', function(ev){
     };
   }
 
-  async function doSave(form, data){
-    if (form.dataset.sending==='1') return;             // anti doble
-    if (!data.usuario || !data.password_plain || !data.url){
-      await swalWarn('Campos incompletos','Usuario, contraseña y URL son obligatorios.');
-      return;
-    }
-    try{
-      disableSubmit(form,true);
-      const res = await fetch(SAVE_URL, {
-        method:'POST',
-        headers:{'Content-Type':'application/json'},
-        body: JSON.stringify(data)
-      });
-      const js = await res.json().catch(()=>({}));
-      if (!res.ok || !js.ok) throw new Error(js.error || 'No se pudo guardar');
+  async function doSave(form, data) {
+  // Anti doble submit
+  if (form.dataset.sending === '1') return;
 
-      const modalEl = form.closest('.modal');
-      if (modalEl) bootstrap.Modal.getOrCreateInstance(modalEl).hide();
-      await swalOK(data.action==='update'?'Actualizado':'Guardado','Operación exitosa.');
-      location.reload();
-    }catch(err){
-      console.error('save error', err);
-      await swalErr('Error', err.message || 'No se pudo guardar');
-    }finally{
-      disableSubmit(form,false);
-    }
+  // Validación básica de IPTV
+  if (!data.usuario || !data.password_plain || !data.url) {
+    await swalWarn('Campos incompletos', 'Usuario, contraseña y URL son obligatorios.');
+    return;
   }
+
+  // 🔐 NUEVO: asegurar servicio_id ANTES de llamar al backend
+  (function ensureServicioId() {
+    let sid = 0;
+
+    // 1) Si ya viene en data y es >0, lo respetamos
+    if (data.servicio_id && !isNaN(Number(data.servicio_id))) {
+      sid = Number(data.servicio_id);
+    }
+
+    // 2) Si sigue en 0, intentamos leerlo del input hidden del formulario
+    if (!sid) {
+      const hidden = form.querySelector('[name="servicio_id"]');
+      if (hidden) {
+        sid = parseInt(hidden.value || '0', 10) || 0;
+      }
+    }
+
+    // 3) Si aún no hay, lo sacamos de la URL (?servicio_id=69 o ?id=69)
+    if (!sid) {
+      try {
+        const qs = new URLSearchParams(window.location.search || '');
+        sid = parseInt(qs.get('servicio_id') || qs.get('id') || '0', 10) || 0;
+      } catch (e) {
+        // ignorar
+      }
+    }
+
+    if (sid > 0) {
+      data.servicio_id = sid;
+    }
+  })();
+
+  // Log para ver exactamente qué se está mandando
+  console.log('IPTV doSave payload', data);
+
+  // Si después de todo sigue sin servicio_id válido, ni siquiera llamamos al PHP
+  if (!data.servicio_id || Number(data.servicio_id) <= 0) {
+    await swalErr('Error', 'servicio_id es 0 o inválido antes de enviar.');
+    return;
+  }
+
+  try {
+    form.dataset.sending = '1';
+    disableSubmit(form, true);
+
+    const res = await fetch(SAVE_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+
+    const js = await res.json().catch(() => ({}));
+    if (!res.ok || !js.ok) {
+      throw new Error(js.error || 'No se pudo guardar');
+    }
+
+    const modalEl = form.closest('.modal');
+    if (modalEl) {
+      bootstrap.Modal.getOrCreateInstance(modalEl).hide();
+    }
+    await swalOK(data.action === 'update' ? 'Actualizado' : 'Guardado', 'Operación exitosa.');
+    location.reload();
+
+  } catch (err) {
+    console.error('save error', err);
+    await swalErr('Error', err.message || 'No se pudo guardar');
+  } finally {
+    disableSubmit(form, false);
+    form.dataset.sending = '';
+  }
+}
+
 
   // AGREGAR PERFIL
   bindOnce('#formAgregarPerfil', async (e)=>{
@@ -9863,28 +9873,71 @@ document.addEventListener('click', function(ev){
     set('wa_cc', cc?('+'+cc):''); set('wa_local', local?local.replace(/(\d{3})(?=\d)/g,'$1 ').trim():'');
   });
 
+  
   // BORRAR (confirmación + AJAX)
-  document.addEventListener('submit', async function(ev){
-    const form = ev.target.closest('.js-delete-form');
-    if (!form) return;
-    ev.preventDefault();
-    const ok = window.Swal?.fire
-      ? await Swal.fire({icon:'warning',title:'Confirmar',text:'¿Borrar este registro?',showCancelButton:true,confirmButtonText:'Sí, borrar'}).then(r=>r.isConfirmed)
-      : confirm('¿Borrar este registro?');
-    if (!ok) return;
+  // BORRAR (confirmación + AJAX)
+document.addEventListener('submit', async function (ev) {
+  const form = ev.target.closest('.js-delete-form');
+  if (!form) return;
 
-    try{
-      const fd=new FormData(form);
-      const res=await fetch(DELETE_URL,{method:'POST',body:fd});
-      const js=await res.json().catch(()=>({}));
-      if(!res.ok||!js.ok) throw new Error(js.error||'No se pudo borrar');
-      await swalOK('Borrado','El registro fue eliminado.');
-      location.reload();
-    }catch(err){
-      await swalErr('Error', err.message||'No se pudo borrar');
+  ev.preventDefault();
+
+  const ok = window.Swal?.fire
+    ? await Swal.fire({
+        icon: 'warning',
+        title: 'Confirmar',
+        text: '¿Borrar este registro?',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, borrar'
+      }).then(r => r.isConfirmed)
+    : confirm('¿Borrar este registro?');
+
+  if (!ok) return;
+
+  try {
+    // 👉 Usamos SIEMPRE el action del formulario
+    const url = form.getAttribute('action') || '';
+    if (!url) throw new Error('No se encontró URL de borrado');
+
+    const fd  = new FormData(form);
+    const res = await fetch(url, { method: 'POST', body: fd });
+
+    if (!res.ok) throw new Error('No se pudo borrar');
+
+    let js = null;
+    const ct = res.headers ? (res.headers.get('Content-Type') || '') : '';
+    if (ct.indexOf('application/json') !== -1) {
+      js = await res.json().catch(() => null);
     }
-  });
-})();
+    if (js && js.ok === false) throw new Error(js.error || 'No se pudo borrar');
+
+    if (window.swalOK) {
+      await swalOK('Borrado', 'El registro fue eliminado.');
+    } else if (window.Swal?.fire) {
+      await Swal.fire({
+        icon: 'success',
+        title: 'Borrado',
+        text: 'El registro fue eliminado.'
+      });
+    }
+
+    location.reload();
+  } catch (err) {
+    if (window.swalErr) {
+      await swalErr('Error', err.message || 'No se pudo borrar');
+    } else if (window.Swal?.fire) {
+      await Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: err.message || 'No se pudo borrar'
+      });
+    } else {
+      alert(err.message || 'No se pudo borrar');
+    }
+  }
+});
+
+})();  // 🔚 IMPORTANTE: cierra el IIFE
 
 
 
@@ -10770,6 +10823,7 @@ function isChildModal(modal){
 
     // 2) En cualquier otro caso lo tratamos como HIJO (apertura programática o desde filas)
     modal.addEventListener('show.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._openMode !== 'parent') modal.dataset._openMode = 'child';
       var price = modal.querySelector('input[name="soles"]');
       if (price) { price.dataset._userTyped = '0'; }
@@ -10777,6 +10831,7 @@ function isChildModal(modal){
 
     // 3) Prefill tardío (tras otros listeners): SOLO padre
     modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._openMode !== 'parent') return;
       var price = modal.querySelector('input[name="soles"]');
       if (!price) return;
@@ -10826,6 +10881,7 @@ function isChildModal(modal){
 
     // 7) Limpieza al cerrar
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       delete modal.dataset._openMode;
       delete modal.dataset._lastHead;
       delete modal.dataset._lastPrice;
@@ -10854,7 +10910,7 @@ function isChildModal(modal){
     var modal = document.getElementById('perfilModal');
     var head  = document.getElementById('precioPerfilHead');
     if (!modal || !head) return;
-    if (window.__pfLockBound) return; window.__pfLockBound = true;
+    /* patched: disable lockParentPrice to avoid readonly bleed */ return; if (window.__pfLockBound) return; window.__pfLockBound = true;
 
     function getPrice(){ return modal.querySelector('input[name="soles"]'); }
 
@@ -10870,11 +10926,13 @@ function isChildModal(modal){
 
     // En otras aperturas, es HIJO
     modal.addEventListener('show.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._mode !== 'parent') modal.dataset._mode = 'child';
     }, true);
 
     // Al mostrar: en PADRE fijar precio, poner readonly y bloquear cambios externos
     modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var price = getPrice(); if (!price) return;
 
       if (modal.dataset._mode === 'parent') {
@@ -10931,6 +10989,7 @@ function isChildModal(modal){
 
     // Limpieza al cerrar
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       delete modal.dataset._mode;
       delete modal.dataset._lockVal;
       var price = getPrice(); if (price){
@@ -10958,7 +11017,9 @@ function isChildModal(modal){
 (function(){
   try {
     var modal = document.getElementById('perfilModal');
-    var head  = document.getElementById('precioPerfilHead');
+    
+    // neutralized for perfilModal
+    return;var head  = document.getElementById('precioPerfilHead');
     if (!modal || !head) return;
     if (window.__pfPriceSwapBound) return; window.__pfPriceSwapBound = true;
 
@@ -11070,6 +11131,7 @@ function isChildModal(modal){
 
     // Limpieza al cerrar
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var form = qForm();
       if (!form) return;
       // limpiar referencias internas y dataset
@@ -11144,7 +11206,8 @@ function isChildModal(modal){
       // plan B: calcularlo mirando el PRIMER hijo existente (siguiente filas hasta próximo padre)
       var anchor = '';
       var r = row.nextElementSibling;
-      while (r && !r.classList.contains('js-parent-row') && r.getAttribute('data-parent') !== '1') {
+      while (r && !r.classList.contains('js-parent-row')) {
+
         // intenta data-precio, o celda con clase .precio-cell, o cualquier número en texto
         var dp = r.getAttribute('data-precio');
         if (dp != null && dp !== '') { anchor = dp; break; }
@@ -11163,6 +11226,7 @@ function isChildModal(modal){
 
     // 2) Al abrir el modal de HIJO, aplicar el ancla si existe; si no, permitir escribir
     modal.addEventListener('show.bs.modal', function(ev){
+ 
       if (modal.dataset._mode !== 'child') return; // solo hij@
       var price = qPrice(); if (!price) return;
 
@@ -11183,6 +11247,7 @@ function isChildModal(modal){
 
     // 3) Al cerrar, limpiar estado
     modal.addEventListener('hidden.bs.modal', function(){
+    
       delete modal.dataset._mode;
       delete modal.dataset._anchor;
       modal.__anchorRow = null;
@@ -11395,7 +11460,9 @@ window.onPerfilChildCreated = function(response){
    ============================================================================= */
 (function(){
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   var form = modal.querySelector('form');
   if (!form) return;
 
@@ -11412,9 +11479,12 @@ window.onPerfilChildCreated = function(response){
     (form.querySelectorAll('input[type="hidden"][name="soles"]')||[]).forEach(function(x){ x.remove(); });
   }
 
-  modal.addEventListener('show.bs.modal', function(){ dropHiddenSoles(); }, true);
-  modal.addEventListener('shown.bs.modal', function(){ dedupeSoles(); }, true);
-  modal.addEventListener('hidden.bs.modal', function(){ dropHiddenSoles(); }, true);
+  modal.addEventListener('show.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return; dropHiddenSoles(); }, true);
+  modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return; dedupeSoles(); }, true);
+  modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return; dropHiddenSoles(); }, true);
   form.addEventListener('submit', function(){ dedupeSoles(); }, true);
 })();
 
@@ -11440,7 +11510,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   var pane  = document.getElementById('perfiles');
   var modal = document.getElementById('perfilModal');
-  if (!pane || !modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!pane || !modal) return;
 
   function qHead(){ return document.getElementById('precioPerfilHead'); }
   function qPrice(){ return modal.querySelector('#childPriceSlot input[name="soles"]') || modal.querySelector('input[name="soles"]'); }
@@ -11458,6 +11530,7 @@ window.onPerfilChildCreated = function(response){
 
   // Seguridad: si el modal se abre específicamente con el botón de agregar
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (ev.relatedTarget && ev.relatedTarget.classList.contains('btn-add-perfil')) {
       var head = qHead(); var price = qPrice();
       if (price && head) { price.value = head.value || ''; }
@@ -11610,7 +11683,9 @@ window.onPerfilChildCreated = function(response){
 // [REEMPLAZO COMPLETO] — HIJO: bloquear precio solo si hay ancla; si no, dejar libre
 (function(){
   try {
-    var modal = document.getElementById('perfilModal'); // modal "Agregar a correo"
+    var modal = document.getElementById('perfilModal'); 
+    // neutralized for perfilModal
+    return;// modal "Agregar a correo"
     if (!modal) return;
     if (window.__pfChildSwapBoundV4) return; window.__pfChildSwapBoundV4 = true;
 
@@ -11626,6 +11701,7 @@ window.onPerfilChildCreated = function(response){
     }, true);
 
     modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var form = qForm(); if (!form) return;
       var slot = qSlot(); if (!slot) return;
 
@@ -11681,6 +11757,7 @@ window.onPerfilChildCreated = function(response){
     }, true);
 
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       // reubica el real dentro del slot si lo sacamos
       var slot = qSlot();
       if (slot && modal.__childReal && !modal.__childReal.isConnected) {
@@ -11733,6 +11810,7 @@ window.onPerfilChildCreated = function(response){
 
   // En show: si NO viene del botón "Agregar perfil", fuerzo modo hijo limpio
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // padre: no tocar aquí
 
@@ -11778,7 +11856,9 @@ window.onPerfilChildCreated = function(response){
 // === CHILD APPLY (en shown): si NO hay ancla → campo vacío y editable; si hay → bloquear
 (function(){
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildApplyOnce) return; window.__pfChildApplyOnce = true;
 
   function qForm(){ return modal.querySelector('form') || modal; }
@@ -11786,6 +11866,7 @@ window.onPerfilChildCreated = function(response){
   function qReal(){ return modal.querySelector('#childPriceSlot input[name="soles"]'); }
 
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // padre: otro flujo
 
@@ -11841,6 +11922,7 @@ window.onPerfilChildCreated = function(response){
 
   // al cerrar: reponer el input real en el slot y limpiar flags
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var slot = qSlot();
     if (slot && modal.__childReal && !modal.__childReal.isConnected) {
       slot.appendChild(modal.__childReal);
@@ -11887,7 +11969,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   'use strict';
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildHardGuard) return; window.__pfChildHardGuard = true;
 
   // Helpers
@@ -11911,6 +11995,7 @@ window.onPerfilChildCreated = function(response){
 
   // 2) show.bs.modal: si NO viene del botón "Agregar perfil", fuerzo modo HIJO limpio
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // PADRE no se toca aquí
 
@@ -11941,6 +12026,7 @@ window.onPerfilChildCreated = function(response){
 
   // 3) shown.bs.modal: blindaje contra reinyectores (observador corto)
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // PADRE: no aplican estos blindajes
 
@@ -11984,6 +12070,7 @@ window.onPerfilChildCreated = function(response){
 
   // 4) hidden: limpieza de estado
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     delete modal.dataset._mode;
     delete modal.dataset._childAnchor;
   }, true);
@@ -12016,7 +12103,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   var pane  = document.getElementById('perfiles');
   var modal = document.getElementById('perfilModal');
-  if (!pane || !modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!pane || !modal) return;
 
   function qHead(){ return document.getElementById('precioPerfilHead'); }
   function qPrice(){ return modal.querySelector('#childPriceSlot input[name="soles"]') || modal.querySelector('input[name="soles"]'); }
@@ -12034,6 +12123,7 @@ window.onPerfilChildCreated = function(response){
 
   // show: si viene del botón de agregar, repite el prefill
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil')) {
       var head = qHead(), inp = qPrice();
       if (head && inp) { inp.value = head.value || ''; }
@@ -12071,7 +12161,9 @@ window.onPerfilChildCreated = function(response){
 // === HOTFIX: Hijo SIN ancla => precio 100% editable (quita readonly heredado) ===
 (function(){
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildUnlockFix) return; window.__pfChildUnlockFix = true;
 
   function qSlot(){ return modal.querySelector('#childPriceSlot'); }
@@ -12086,6 +12178,7 @@ window.onPerfilChildCreated = function(response){
   }
 
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     // Si viene del botón "Agregar perfil" es PADRE => no tocar
     if (ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil')) return;
 
@@ -12183,7 +12276,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   'use strict';
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildUltraFix) return; window.__pfChildUltraFix = true;
 
   function qForm(){ return modal.querySelector('form') || modal; }
@@ -12228,6 +12323,7 @@ window.onPerfilChildCreated = function(response){
   }, true);
 
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return;
     modal.dataset._mode = 'child';
     Promise.resolve().then(function(){
@@ -12237,6 +12333,7 @@ window.onPerfilChildCreated = function(response){
   }, true);
 
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return;
     var anchor = modal.dataset._childAnchor || '';
     if (anchor !== '') return;
@@ -12283,6 +12380,7 @@ window.onPerfilChildCreated = function(response){
   }, true);
 
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     delete modal.dataset._mode;
     delete modal.dataset._childAnchor;
   }, true);
@@ -12313,7 +12411,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   'use strict';
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildCanonicalV7) return; window.__pfChildCanonicalV7 = true;
 
   // Helpers
@@ -12354,12 +12454,14 @@ window.onPerfilChildCreated = function(response){
 
   // 2) show: si no es PADRE, limpiar residuos que reinyectan/bloquean
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return; // PADRE: no tocamos
     cleanupResidues();
   }, true);
 
   // 3) shown: aplicar reglas del hijo
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return; // PADRE: fuera
     var slot = qSlot(); var form = qForm();
     if (!slot || !form) return;
@@ -12421,6 +12523,7 @@ window.onPerfilChildCreated = function(response){
 
   // 4) hidden: limpiar flags y reponer real si hiciera falta
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     cleanupResidues();
     delete modal.dataset._childAnchor;
   }, true);
@@ -12437,54 +12540,6 @@ window.onPerfilChildCreated = function(response){
 
 
 
-
-(function(){
-  var modal = document.getElementById('perfilModal');
-  if (!modal) return;
-
-  modal.addEventListener('shown.bs.modal', function () {
-    var form = modal.querySelector('form');
-    if (!form) return;
-
-    // 1) Ubica el “slot” del precio si existe
-    var slot = form.querySelector('#childPriceSlot') || form;
-
-    // 2) Tomamos todos los inputs con name="soles"
-    var all = Array.prototype.slice.call(form.querySelectorAll('input[name="soles"]'));
-
-    // 3) Elegimos cuál conservar:
-    //    - Preferimos uno que esté DENTRO del slot
-    //    - Si no hay, preferimos el que sea type="number"
-    var keeper = all.find(function(i){ return slot.contains(i); }) ||
-                 all.find(function(i){ return i.type === 'number'; }) ||
-                 all[0];
-
-    // 4) Eliminamos los demás 'soles' duplicados
-    all.forEach(function(i){
-      if (i !== keeper) {
-        // Si quieres solo “desactivarlos” en vez de borrarlos: i.name = 'soles_dummy';
-        i.remove();
-      }
-    });
-
-    // 5) Aseguramos que el que queda sea EDITABLE y esté en el slot
-    if (keeper) {
-      if (!slot.contains(keeper)) slot.appendChild(keeper);
-      keeper.type = 'number';
-      keeper.readOnly = false;
-      keeper.removeAttribute('readonly');
-      keeper.classList.remove('bg-light');
-      if (!keeper.id) keeper.id = 'modalChildPrecio';
-      if (!keeper.placeholder) keeper.placeholder = 'Ingrese precio';
-      if (!keeper.step) keeper.step = '0.01';
-      if (!keeper.min) keeper.min = '0';
-    }
-
-    // 6) Ocultamos cualquier “display” espejado si reapareciera
-    var disp = form.querySelector('#modalChildPrecio_display');
-    if (disp) disp.style.display = 'none';
-  });
-})();
 
 
 
@@ -12510,6 +12565,7 @@ window.onPerfilChildCreated = function(response){
   if (!modal) return;
 
   modal.addEventListener('show.bs.modal', function (ev) {
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var trigger = ev.relatedTarget;
     // Si no vino desde una fila, no hacemos nada (esto deja libre al padre y al primer hijo)
     if (!trigger || trigger.tagName !== 'TR') return;
@@ -12573,6 +12629,7 @@ window.onPerfilChildCreated = function(response){
   if (!modal) return;
 
   modal.addEventListener('shown.bs.modal', function (ev) {
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var trigger = ev.relatedTarget;
     // Solo aplica cuando abres desde una FILA (TR) y esa fila ya tiene primer hijo
     if (!trigger || trigger.tagName !== 'TR') return;
@@ -12638,6 +12695,7 @@ window.onPerfilChildCreated = function(response){
   });
 
   modal.addEventListener('hidden.bs.modal', function () {
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (modal.__childLockObs) { modal.__childLockObs.disconnect(); modal.__childLockObs = null; }
   });
 })();
@@ -12669,6 +12727,7 @@ window.onPerfilChildCreated = function(response){
     if (!modal || !head) return;
 
     function qForm(){ return modal.querySelector('form') || modal; }
+
     function rebuildSlot(form){
       var group = form.querySelector(groupSelector);
       if (!group) return null;
@@ -12676,6 +12735,7 @@ window.onPerfilChildCreated = function(response){
       group.innerHTML = labelHTML + '<div '+slotSelector.replace('#','id="')+'" data-price-slot></div>';
       return form.querySelector(slotSelector);
     }
+
     function purgeForeignSoles(form, keep){
       form.querySelectorAll('input[name="soles"]').forEach(function(inp){
         if (!keep || inp !== keep) inp.remove();
@@ -12684,6 +12744,7 @@ window.onPerfilChildCreated = function(response){
       var tailHidden = form.querySelector(':scope > input[name="soles"]');
       if (tailHidden && (!keep || tailHidden !== keep)) tailHidden.remove();
     }
+
     function mountEditable(slot){
       slot.innerHTML = '';
       var pr = document.createElement('input');
@@ -12694,6 +12755,7 @@ window.onPerfilChildCreated = function(response){
       slot.appendChild(pr);
       return pr;
     }
+
     function mountLocked(slot, v){
       slot.innerHTML = '';
       var vis = document.createElement('input');
@@ -12712,24 +12774,56 @@ window.onPerfilChildCreated = function(response){
       if (t && (t.classList?.contains('btn-add-perfil-fam') || t.matches?.('.btn-add-perfil-fam'))) {
         modal.dataset._mode = 'parent';
         modal.dataset._headSnapshot = head.value || '';
+        // apertura desde botón → NO es desde fila
+        delete modal.dataset._fromRow;
+        delete modal.dataset._anchor;
       }
     }, true);
 
     // cualquier otra apertura => HIJO
-    modal.addEventListener('show.bs.modal', function(){
+    modal.addEventListener('show.bs.modal', function(ev){
+      if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._mode !== 'parent') modal.dataset._mode = 'child';
+      // si no viene marcado como "desde fila", no usamos anchor
+      if (!modal.dataset._fromRow) {
+        delete modal.dataset._anchor;
+      }
     }, true);
 
-    modal.addEventListener('shown.bs.modal', function(){
+    modal.addEventListener('shown.bs.modal', function(ev){
+      if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var form = qForm(); if (!form) return;
       var slot = rebuildSlot(form); if (!slot) return;
+
+      var anchor = modal.dataset._anchor || '';
 
       purgeForeignSoles(form, null);
 
       var mode  = modal.dataset._mode || 'child';
+
+      // === CASO: abierto desde click en FILA (Streaming familiar) ===
+      if (modal.dataset._fromRow === '1') {
+        // consumimos el flag para esta apertura
+        delete modal.dataset._fromRow;
+
+        if (anchor) {
+          // Ya existe primer hijo → precio anclado y bloqueado
+          var keep = mountLocked(slot, anchor);
+          purgeForeignSoles(form, keep);
+          return;
+        } else {
+          // NO hay primer hijo aún → primer hijo editable, "Ingrese precio"
+          mountEditable(slot);
+          // aquí no necesitamos el estabilizador agresivo
+          return;
+        }
+      }
+
+      // === Resto de casos (botón Agregar perfil, etc.) ===
       if (mode === 'parent') {
         var lockVal = head.value || modal.dataset._headSnapshot || '';
-        mountLocked(slot, lockVal);
+        var keep = mountLocked(slot, lockVal);
+        purgeForeignSoles(form, keep);
 
         function syncFromHead(){
           if (!modal.classList.contains('show')) return;
@@ -12745,20 +12839,25 @@ window.onPerfilChildCreated = function(response){
           modal.__famHeadSyncBound = true;
         }
       } else {
-        // HIJO: primer hijo editable (los siguientes hijos quedan bloqueados por tu lógica del anchor)
+        // HIJO abierto desde botón u otros → editable normal
         var pr = mountEditable(slot);
 
-        // estabilizador: evita que otro script lo bloquee/duplique
+        // estabilizador: evita que otros scripts lo bloqueen/dupliquen (solo en este caso)
         if (modal.__famStab) clearInterval(modal.__famStab);
         var t0 = Date.now();
         modal.__famStab = setInterval(function(){
           if (!modal.classList.contains('show') || (Date.now() - t0) > 1200) {
-            clearInterval(modal.__famStab); modal.__famStab = null; return;
+            clearInterval(modal.__famStab);
+            modal.__famStab = null; return;
           }
           var inside = slot.querySelector('input[name="soles"]');
           if (!inside) inside = mountEditable(slot);
-          inside.readOnly = false; inside.removeAttribute('readonly'); inside.classList.remove('bg-light');
-          form.querySelectorAll('input[name="soles"]').forEach(function(inp){ if (!slot.contains(inp)) inp.remove(); });
+          inside.readOnly = false;
+          inside.removeAttribute('readonly');
+          inside.classList.remove('bg-light');
+          form.querySelectorAll('input[name="soles"]').forEach(function(inp){
+            if (!slot.contains(inp)) inp.remove();
+          });
           var disp = form.querySelector('#modalChildPrecio_display'); if (disp) disp.remove();
         }, 50);
       }
@@ -12767,15 +12866,21 @@ window.onPerfilChildCreated = function(response){
     modal.addEventListener('hidden.bs.modal', function(){
       var form = qForm(); if (!form) return;
       if (modal.__famStab) { clearInterval(modal.__famStab); modal.__famStab = null; }
-      delete modal.dataset._mode; delete modal.dataset._headSnapshot;
-      // limpiar el slot
+      delete modal.dataset._mode;
+      delete modal.dataset._headSnapshot;
+      delete modal.dataset._fromRow;
+      delete modal.dataset._anchor;
+
       purgeForeignSoles(form, null);
       var slot = form.querySelector(slotSelector);
       if (slot) slot.innerHTML = '';
     }, true);
 
-  } catch(e) { console.error('[fam price swap]', e); }
+  } catch(e) {
+    console.error('[fam price swap]', e);
+  }
 })('perfilFamiliarModal','precioFamiliarHead','#famChildPriceSlot','#famChildPriceGroup');
+
 
 
 
@@ -12811,38 +12916,72 @@ window.onPerfilChildCreated = function(response){
   if (window.__famOpenSmallV2) return; window.__famOpenSmallV2 = true;
 
   // Click en celda Plan (solo dentro de #perfiles-familiar) => abrir modal chico de Familiar
-  document.addEventListener('click', function(ev){
-    var td = ev.target.closest('#perfiles-familiar td.plan-cell-perfil');
+  // ================================================================
+// CLICK EN CELDA PLAN (modal chico) — VERSIÓN CORREGIDA COMPLETA
+// ================================================================
+document.addEventListener('click', function(ev){
+    // Solo si estamos dentro de la pestaña PERFILES
+    const tab = document.getElementById('perfiles');
+    if (!tab || !tab.contains(ev.target)) return;
+
+    const td = ev.target.closest('td.plan-cell-perfil');
     if (!td) return;
 
-    var tr = td.closest('tr');
-    if (!tr || tr.getAttribute('data-entidad') !== 'perfil_fam') return;
+    // Evitamos que la fila padre abra su propio modal
+    ev.preventDefault();
+    ev.stopPropagation();
 
-    ev.preventDefault(); ev.stopPropagation();
+    // 🔥 LIMPIAR SIEMPRE BACKDROPS ANTES DE ABRIR ESTE MODAL
+    document.querySelectorAll('.modal-backdrop').forEach(el => el.remove());
+    document.body.classList.remove('modal-open');
+    document.body.style.removeProperty('padding-right');
 
-    var modal = document.getElementById('modalCambiarPlanFamiliar');
-    if (!modal || !window.bootstrap) return;
+    const modal = document.getElementById('modalCambiarPlanPerfil');
+    if (!modal) return;
 
-    // ID desde celda o fila
-    var id = (td.getAttribute('data-id') || tr.getAttribute('data-id') || '').replace(/\D+/g,'');
-    var plan = (td.getAttribute('data-plan') || td.textContent || '').trim().toLowerCase();
-    var color= (tr.getAttribute('data-color') || '').trim();
+    const tr = td.closest('tr');
 
-    var idEl    = modal.querySelector('#famPlanId');
-    var planSel = modal.querySelector('#famPlanSelect');
-    var colorSel= modal.querySelector('#famColorSelect');
-    var destSel = modal.querySelector('#famEnviarASelect');
+    // Obtener ID del perfil
+    const idRaw =
+        (td.dataset.id || '') ||
+        (tr?.dataset.id || '')
+        ? (td.dataset.id || tr.dataset.id || '').replace(/\D+/g, '')
+        : '';
 
-    if (idEl) idEl.value = id;
-    if (planSel) {
-      plan = ['individual','standard','premium'].includes(plan) ? plan : 'premium';
-      planSel.value = plan;
+    if (!idRaw) {
+        console.warn('[Perfiles] Celda Plan sin data-id');
+        return;
     }
-    if (colorSel) colorSel.value = color || '';
-    if (destSel)  destSel.value  = 'none';
 
+    // Guardamos celda origen por si la necesitamos
+    window.__perfilLastCell = td;
+    modal.dataset.context = 'perfiles';
+
+    // Campos dentro del modal
+    const idEl     = modal.querySelector('#perfilPlanId');
+    const planSel  = modal.querySelector('#perfilPlanSelect');
+    const colorSel = modal.querySelector('#perfilColorSelect');
+    const destSel  = modal.querySelector('#perfilEnviarASelect, select[name="enviar_a"]');
+
+    if (idEl) idEl.value = idRaw;
+
+    // Normalizar plan
+    const normPlan = p => (p || '').trim().toLowerCase();
+    if (planSel) planSel.value = normPlan(td.dataset.plan || td.textContent);
+
+    // Color de la fila
+    if (colorSel && tr) {
+        const c = (tr.dataset.color || '').trim();
+        colorSel.value = c;
+    }
+
+    // Destino por defecto
+    if (destSel) destSel.value = 'none';
+
+    // MOSTRAR MODAL CHICO
     bootstrap.Modal.getOrCreateInstance(modal).show();
-  }, true);
+}, true);
+
 })();
 
 
@@ -12850,73 +12989,156 @@ window.onPerfilChildCreated = function(response){
   if (window.__famSaveSmallV2) return; window.__famSaveSmallV2 = true;
 
   // Guardar (solo familiar) => endpoint propio
-  document.addEventListener('click', async function(ev){
-    var btn = ev.target.closest('#btnGuardarPlanFamiliar');
-    if (!btn) return;
+  document.addEventListener(
+    'click',
+    async function (ev) {
+      const btn = ev.target.closest('#btnGuardarPlanFamiliar');
+      if (!btn) return;
 
-    var modal = btn.closest('#modalCambiarPlanFamiliar');
-    if (!modal) return;
+      const modal = btn.closest('#modalCambiarPlanFamiliar');
+      if (!modal) return;
 
-    ev.preventDefault(); ev.stopPropagation(); ev.stopImmediatePropagation();
+      ev.preventDefault();
+      ev.stopPropagation();
+      if (ev.stopImmediatePropagation) ev.stopImmediatePropagation();
 
-    var id       = (modal.querySelector('#famPlanId')?.value || '').trim();
-    var plan     = (modal.querySelector('#famPlanSelect')?.value || '').trim();
-    var color    = (modal.querySelector('#famColorSelect')?.value || '').trim();
-    var enviar_a = (modal.querySelector('#famEnviarASelect')?.value || 'none').trim().toLowerCase();
+      const id = (modal.querySelector('#famPlanId')?.value || '').trim();
+      const plan = (modal.querySelector('#famPlanSelect')?.value || '').trim();
+      const color = (modal.querySelector('#famColorSelect')?.value || '').trim();
+      const enviar_a = (
+        modal.querySelector('#famEnviarASelect')?.value || 'none'
+      )
+        .trim()
+        .toLowerCase();
 
-    if (!id || !plan) {
-      if (window.Swal) Swal.fire({ icon:'warning', title:'Falta ID o Plan', text:'Reabre el modal desde la celda Plan.' });
-      return;
-    }
-
-    // Feedback UI
-    var old = btn.innerHTML; btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Guardando...';
-
-    try {
-      var endpoint = new URL('ajax/perfiles_familiar_plan_update.php', document.baseURI).toString();
-      var body = new URLSearchParams({ id:id, plan:plan, enviar_a:enviar_a });
-      if (color !== '') body.set('color', color);
-
-      var res = await fetch(endpoint, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/x-www-form-urlencoded; charset=UTF-8' },
-        credentials:'same-origin',
-        redirect:'follow',
-        body
-      });
-
-      var ct  = res.headers.get('content-type') || '';
-      var raw = await res.text();
-      var data = ct.includes('application/json') ? (function(){ try {return JSON.parse(raw)} catch(_){return null} })() : null;
-
-      if (!res.ok || !data || !data.ok) throw new Error((data && data.error) || ('HTTP '+res.status));
-
-      // Actualiza la UI solo en Familiar
-      var td  = document.querySelector('#perfiles-familiar td.plan-cell-perfil[data-id="'+id+'"]')
-             || document.querySelector('#perfiles-familiar tr[data-entidad="perfil_fam"][data-id="'+id+'"] .plan-cell-perfil');
-      var row = td ? td.closest('tr') : document.querySelector('#perfiles-familiar tr[data-entidad="perfil_fam"][data-id="'+id+'"]');
-
-      if (td) { td.textContent = plan; td.setAttribute('data-plan', plan); }
-      if (row) {
-        row.classList.remove('row-color-rojo','row-color-azul','row-color-verde','row-color-blanco');
-        row.removeAttribute('data-color');
-        if (color && ['rojo','azul','verde','blanco'].includes(color)) {
-          row.classList.add('row-color-'+color);
-          row.setAttribute('data-color', color);
+      if (!id || !plan) {
+        if (window.Swal) {
+          Swal.fire({
+            icon: 'warning',
+            title: 'Falta ID o Plan',
+            text: 'Reabre el modal desde la celda Plan.'
+          });
         }
+        return;
       }
 
-      bootstrap.Modal.getOrCreateInstance(modal).hide();
-      if (window.Swal) Swal.fire({ icon:'success', title:'Actualizado', timer:1200, showConfirmButton:false });
-    } catch (err) {
-      console.error('[Familiar] Guardar plan:', err);
-      if (window.Swal) Swal.fire({ icon:'error', title:'No se pudo guardar', text: err.message || 'Intenta de nuevo' });
-    } finally {
-      btn.disabled = false; btn.innerHTML = old;
-    }
-  }, true);
+      // Evitar doble submit
+      if (btn.disabled) return;
+      btn.disabled = true;
+      const oldHtml = btn.innerHTML;
+      btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+
+      try {
+        // Endpoint relativo al streaming.php
+        const endpoint = new URL(
+          'ajax/perfiles_familiar_plan_update.php',
+          document.baseURI
+        ).toString();
+
+        const body = new URLSearchParams();
+        body.set('id', id);
+        body.set('plan', plan);
+        body.set('enviar_a', enviar_a);
+        if (color !== '') body.set('color', color);
+
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type':
+              'application/x-www-form-urlencoded;charset=UTF-8'
+          },
+          credentials: 'same-origin',
+          redirect: 'follow',
+          body
+        });
+
+        const ct = res.headers.get('content-type') || '';
+        let data = null;
+        if (ct.includes('application/json')) {
+          try {
+            data = await res.json();
+          } catch (_) {
+            data = null;
+          }
+        }
+
+        if (!res.ok || !data || !data.ok) {
+          throw new Error(
+            (data && data.error) || 'Error del servidor (' + res.status + ')'
+          );
+        }
+
+        // ✅ Actualizar la UI en la tabla Familiar
+        const td =
+          document.querySelector(
+            '#perfiles-familiar td.plan-cell-perfil[data-id="' + id + '"]'
+          ) ||
+          document.querySelector(
+            '#perfiles-familiar tr[data-entidad="perfil_fam"][data-id="' +
+              id +
+              '"] .plan-cell-perfil'
+          );
+        const row =
+          td?.closest('tr') ||
+          document.querySelector(
+            '#perfiles-familiar tr[data-entidad="perfil_fam"][data-id="' +
+              id +
+              '"]'
+          );
+
+        if (td) {
+          td.textContent = plan;
+          td.setAttribute('data-plan', plan);
+        }
+        if (row) {
+          row.classList.remove(
+            'row-color-rojo',
+            'row-color-azul',
+            'row-color-verde',
+            'row-color-blanco'
+          );
+          row.removeAttribute('data-color');
+          if (color && ['rojo', 'azul', 'verde', 'blanco'].includes(color)) {
+            row.classList.add('row-color-' + color);
+            row.setAttribute('data-color', color);
+          }
+        }
+
+        // Cerrar modal y mostrar éxito + RECARGAR
+        bootstrap.Modal.getOrCreateInstance(modal).hide();
+        if (window.Swal) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Actualizado',
+            timer: 1200,
+            showConfirmButton: false
+          }).then(() => {
+            // Recargar la página para que se vean los cambios
+            window.location.reload();
+          });
+        } else {
+          // Si no existe Swal por alguna razón, igual recargamos
+          window.location.reload();
+        }
+      } catch (err) {
+        console.error('[Familiar] Guardar plan:', err);
+        if (window.Swal) {
+          Swal.fire({
+            icon: 'error',
+            title: 'No se pudo guardar',
+            text: err.message || 'Intenta de nuevo'
+          });
+        }
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = oldHtml;
+      }
+    },
+    true // captura
+  );
+
 })();
+
 
 
 
@@ -13621,6 +13843,2421 @@ window.onPerfilChildCreated = function(response){
 })();
 
 
+// === FAMILIAR: Agregar (cabecera) / Editar (botón) — sin tocar el flujo Hijo ===
+(function () {
+  const m = document.getElementById('perfilFamiliarModal');
+  if (!m) return;
+
+  function $(sel) { return m.querySelector(sel); }
+  function set(sel, v) { const el = $(sel); if (el) el.value = (v == null ? '' : String(v)); }
+  function today() { const d = new Date(); return d.toISOString().slice(0,10); }
+  function inNDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); }
+
+  function clearFormForAdd() {
+    const f = m.querySelector('form'); if (!f) return;
+    f.reset();
+    ['correo','password_plain','wa_cc','wa_local','perfil','soles'].forEach(n => set(`[name="${n}"]`, ''));
+    set('select[name="combo"]', '0');
+    set('select[name="estado"]', 'activo');
+    set('select[name="dispositivo"]', 'tv');
+    set('input[name="fecha_inicio"]', today());
+    set('input[name="fecha_fin"]', inNDays(30));
+    ['correo','password_plain'].forEach(n => {
+      const el = $(`input[name="${n}"]`);
+      if (el) { el.removeAttribute('readonly'); el.classList.remove('bg-light'); }
+    });
+  }
+
+  m.addEventListener('show.bs.modal', function (ev) {
+    const btn = ev.relatedTarget || null;
+    const isAddFromHead = !!(btn && btn.classList && btn.classList.contains('btn-add-perfil-fam'));
+    const isEditFromRow = !!(btn && btn.classList && btn.classList.contains('btn-edit-perfil-fam'));
+
+    if (!isAddFromHead && !isEditFromRow) return; // flujo Hijo
+
+    const titleEl  = $('#perfilFamiliarModalLabel') || m.querySelector('.modal-title');
+    const submitEl = m.querySelector('button[type="submit"]');
+
+    if (isEditFromRow) {
+      let row = {};
+      try { row = JSON.parse(btn.getAttribute('data-row') || '{}'); } catch (_) {}
+      clearFormForAdd();
+      set('input[name="action"]', 'update');
+      set('input[name="id"]', row.id);
+      set('input[name="correo"]', row.correo || '');
+      set('input[name="password_plain"]', row.password_plain || '');
+      set('input[name="fecha_inicio"]', row.fecha_inicio || today());
+      set('input[name="fecha_fin"]', row.fecha_fin || inNDays(30));
+      set('input[name="perfil"]', row.perfil || '');
+      set('input[name="soles"]', row.soles || '');
+      set('select[name="estado"]', row.estado || 'activo');
+      set('select[name="dispositivo"]', row.dispositivo || 'tv');
+      set('select[name="combo"]', (row.combo != null ? String(row.combo) : '0'));
+      if (row.whatsapp && String(row.whatsapp).charAt(0) === '+') {
+        const digits = String(row.whatsapp).replace(/\s+/g,'').replace(/^\+/,'');
+        const cc = digits.length > 9 ? digits.slice(0, digits.length - 9) : '';
+        const local = digits.length > 9 ? digits.slice(-9) : digits;
+        set('input[name="wa_cc"]', cc);
+        set('input[name="wa_local"]', local.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3'));
+      }
+      if (titleEl)  titleEl.textContent = 'Editar Perfil (familiar)';
+      if (submitEl) submitEl.textContent = 'Guardar cambios';
+      ev.stopImmediatePropagation(); ev.stopPropagation();
+      return;
+    }
+
+    if (isAddFromHead) {
+      clearFormForAdd();
+      set('input[name="action"]', 'create');
+      const head = document.getElementById('precioFamiliarHead');
+      if (head && head.value) set('input[name="soles"]', head.value);
+      if (titleEl)  titleEl.textContent = 'Agregar Perfil (familiar)';
+      if (submitEl) submitEl.textContent = 'Guardar';
+      ev.stopImmediatePropagation(); ev.stopPropagation();
+      return;
+    }
+  }, true);
+
+  m.addEventListener('hidden.bs.modal', function () {
+    const f = m.querySelector('form'); if (f) f.reset();
+    delete m.dataset.context;
+    delete m.dataset.mode;
+    ['correo','password_plain'].forEach(n => {
+      const el = $(`input[name="${n}"]`);
+      if (el) { el.removeAttribute('readonly'); el.classList.remove('bg-light'); }
+    });
+  });
+})();
 
 
+// === CHILD FIX (append-only): ensure child price editable and 0.00; no clones/readonly ===
+(function(){
+  var pm = document.getElementById('perfilModal');
+  if (!pm) return;
+  function isChild(ev){
+    var rt = ev && ev.relatedTarget;
+    if (rt && rt.closest && rt.closest('tr.js-parent-row[data-entidad="perfil"]')) return true;
+    return !!(pm.dataset && pm.dataset.context === 'child');
+  }
+  function fixOnce(){
+    if (!pm.classList.contains('show')) return;
+    var f = pm.querySelector('form'); if (!f) return;
+    var real = f.querySelector('#modalChildPrecio') || f.querySelector('input[name="soles"]');
+    if (real){
+      real.readOnly = false; real.removeAttribute('readonly'); real.classList.remove('bg-light');
+      if (!real.value || /^\s*$/.test(real.value) || /^0+(\.0+)?$/.test(real.value)) real.value = '0.00';
+    }
+    f.querySelectorAll('#modalChildPrecio_display,[data-price-mount],[data-price-slot]').forEach(function(n){ n.remove(); });
+    var all = f.querySelectorAll('input[name="soles"]');
+    all.forEach(function(el){ if (real && el !== real) el.remove(); });
+  }
+  pm.addEventListener('shown.bs.modal', function(ev){
+    if (!isChild(ev)) return;
+    [0,20,60,120,240].forEach(function(ms){ setTimeout(fixOnce, ms); });
+    requestAnimationFrame(fixOnce);
+  }, true);
+  pm.addEventListener('hidden.bs.modal', function(){ delete pm.dataset.context; }, true);
+})();
+
+
+
+/* =======================================================================
+   CUENTAS — Filtros (scope=cuentas) v6 (estable)
+   - Soporta múltiples <tbody>.
+   - En "Menos días / Mayor días" reordena grupos (padre + hijos) en el PRIMER <tbody>.
+   - Durante cualquier filtro/orden oculta los <tr data-sep>.
+   - Al limpiar TODO restaura EXACTAMENTE el DOM original (incluidos separadores) sin recargar.
+   - Plan normalizado: 'estandar'~'standard'; 'basico' incluye 'individual'.
+   ======================================================================= */
+(function(){
+  'use strict';
+  if (window.__cuFilterBoundV6) return;
+  window.__cuFilterBoundV6 = true;
+
+  var table = document.getElementById('cuentasTable');
+  var box   = document.querySelector('div.__cuFilter__[data-scope="cuentas"]');
+  if (!table || !box || !table.tBodies || !table.tBodies.length) return;
+
+  var main   = box.querySelector('.cu-main');
+  var plan   = box.querySelector('.cu-plan');
+  var search = box.querySelector('.cu-search');
+  var clear  = box.querySelector('.cu-clear');
+
+  var targetTbody = table.tBodies[0];
+
+  // ===== Helpers
+  function debounce(fn, wait){ var t; return function(){ var a=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,a); }, wait||120); }; }
+  function normPlan(s){
+    s = (s||'').toLowerCase();
+    try { s = s.normalize('NFD').replace(/[\u0300-\u036f]/g,''); } catch(_){}
+    if (s==='standard') s='estandar';
+    if (s==='basic')    s='basico';
+    return s;
+  }
+  function parseDaysFromParent(tr){
+    var td = tr && tr.cells && tr.cells[5];
+    if (!td) return 0;
+    var m = (td.textContent||'').trim().match(/-?\d+/);
+    return m ? parseInt(m[0],10) : 0;
+  }
+  function togglePlanSel(){
+    if (!plan || !main) return;
+    if ((main.value||'')==='plan') plan.style.display='';
+    else { plan.style.display='none'; plan.value=''; }
+  }
+  function collectAllRows(){
+    var out = [];
+    for (var b=0;b<table.tBodies.length;b++){
+      var rows = table.tBodies[b].rows;
+      for (var i=0;i<rows.length;i++) out.push(rows[i]);
+    }
+    return out;
+  }
+  function setSeparatorsDisplay(show){
+    for (var b=0;b<table.tBodies.length;b++){
+      var rows = table.tBodies[b].rows;
+      for (var i=0;i<rows.length;i++){
+        var tr = rows[i];
+        if (tr.hasAttribute('data-sep')) tr.style.display = show ? '' : 'none';
+      }
+    }
+  }
+  function buildGroups(){
+    var rows = collectAllRows();
+    var groups = [], cur=null;
+    for (var i=0;i<rows.length;i++){
+      var tr = rows[i];
+      if (tr.hasAttribute('data-sep')) continue;
+      if (tr.classList.contains('js-parent-row')){
+        cur = { parent: tr, children: [], orig: parseInt(tr.getAttribute('data-orig-idx')||'0',10) || 0 };
+        groups.push(cur);
+      } else if (cur){ cur.children.push(tr); }
+    }
+    return groups;
+  }
+  function groupMatchesFilters(g, sel, planSel, q){
+    var tr = g.parent, show = true;
+    if (sel==='pendientes'){
+      show = ((tr.textContent||'').toLowerCase().indexOf('pendiente')!==-1);
+    } else if (sel==='plan'){
+      var rowPlan = normPlan(tr.getAttribute('data-plan')||'');
+      if (planSel){
+        show = (planSel==='basico') ? (rowPlan==='basico'||rowPlan==='individual') : (rowPlan===planSel);
+      }
+    } else if (/^color_/.test(sel)){
+      show = tr.classList.contains('row-color-'+sel.replace(/^color_/,''));
+    }
+    if (show && q){
+      var correo  = (tr.getAttribute('data-correo')||'').toLowerCase();
+      var cliente = (tr.querySelector('.cliente')?.textContent||'').toLowerCase();
+      if (correo.indexOf(q)===-1 && cliente.indexOf(q)===-1) show=false;
+    }
+    return show;
+  }
+
+  // ===== Índice original (incluye separadores y su <tbody> destino)
+  var __origOrder = (function snapshotOriginal(){
+    var snap = [];
+    for (var b=0;b<table.tBodies.length;b++){
+      var tb = table.tBodies[b];
+      var rows = tb.rows;
+      for (var i=0;i<rows.length;i++){
+        var tr = rows[i];
+        snap.push({ row: tr, parent: tb });
+      }
+    }
+    // asigna data-orig-idx solo a padres
+    var idx=0;
+    for (var k=0;k<snap.length;k++){
+      var tr = snap[k].row;
+      if (!tr.hasAttribute('data-sep') && tr.classList.contains('js-parent-row') && !tr.hasAttribute('data-orig-idx')){
+        tr.setAttribute('data-orig-idx', String(idx++));
+      }
+    }
+    return snap;
+  })();
+
+  function restoreOriginal(){
+    // reinyectamos TODAS las filas a su <tbody> original en el orden exacto
+    for (var i=0;i<__origOrder.length;i++){
+      var it = __origOrder[i];
+      it.parent.appendChild(it.row);
+      it.row.style.display = ''; // visible
+    }
+    setSeparatorsDisplay(true);   // fechas visibles en modo "todo limpio"
+  }
+
+  function apply(){
+    var q        = (search && search.value || '').trim().toLowerCase();
+    var sel      = (main && main.value || '');
+    var planSel  = normPlan(plan && plan.value || '');
+
+    var isDaysSort     = (sel==='dias_asc' || sel==='dias_desc');
+    var isAnyFilter    = !!(q || planSel || (/^(pendientes|plan|color_)/.test(sel)));
+    var somethingOn    = isDaysSort || isAnyFilter;
+
+    // separadores: ocultos si hay algo activo; visibles si todo está limpio
+    setSeparatorsDisplay(!somethingOn);
+
+    if (!somethingOn){
+      // restaurar DOM original
+      restoreOriginal();
+      return;
+    }
+
+    if (isDaysSort){
+      // ordenar por días: mover grupos al primer <tbody>
+      var groups = buildGroups();
+      for (var i=0;i<groups.length;i++){
+        var g = groups[i];
+        g.show = groupMatchesFilters(g, sel, planSel, q);
+        g.days = parseDaysFromParent(g.parent);
+      }
+      var order = groups.slice();
+      if (sel==='dias_asc') order.sort(function(a,b){ return (a.days-b.days) || (a.orig-b.orig); });
+      else                  order.sort(function(a,b){ return (b.days-a.days) || (a.orig-b.orig); });
+
+      var frag = document.createDocumentFragment();
+      for (var j=0;j<order.length;j++){
+        var gg = order[j];
+        gg.parent.style.display = gg.show ? '' : 'none';
+        frag.appendChild(gg.parent);
+        for (var h=0; h<gg.children.length; h++){
+          gg.children[h].style.display = gg.show ? '' : 'none';
+          frag.appendChild(gg.children[h]);
+        }
+      }
+      targetTbody.appendChild(frag);
+      return;
+    }
+
+    // solo filtrar (sin reordenar)
+    var rows = collectAllRows();
+    var parentVisible = true;
+    for (var r=0;r<rows.length;r++){
+      var tr = rows[r];
+      if (tr.hasAttribute('data-sep')) continue;
+      var isParent = tr.classList.contains('js-parent-row');
+      if (isParent){
+        var show = groupMatchesFilters({parent:tr}, sel, planSel, q);
+        tr.style.display = show ? '' : 'none';
+        parentVisible = show;
+      } else {
+        tr.style.display = parentVisible ? '' : 'none';
+      }
+    }
+  }
+
+  // Bind
+  if (main)   main.addEventListener('change', function(){ togglePlanSel(); apply(); });
+  if (plan)   plan.addEventListener('change', apply);
+  if (search) search.addEventListener('input', debounce(apply, 150));
+  if (clear)  clear.addEventListener('click', function(){
+    if (main)   main.value = '';
+    if (plan)   plan.value = '';
+    if (search) search.value = '';
+    togglePlanSel();
+    apply(); // esto restaura DOM original
+  });
+
+  // Init
+  togglePlanSel();
+  apply();
+
+  document.addEventListener('shown.bs.tab', function(e){
+    var t = e.target && (e.target.getAttribute('data-bs-target') || e.target.getAttribute('href')) || '';
+    if (t === '#cuentas') { togglePlanSel(); apply(); }
+  });
+})();
+
+
+
+
+/* =======================================================================
+   CUENTAS — Filtros (scope=cuentas) v6 (estable)
+   - Multi-<tbody> soportado
+   - Orden por DÍAS reubica grupos (padre+hijos) en el PRIMER <tbody>
+   - Oculta separadores (tr[data-sep]) cuando hay filtro/orden
+   - "Limpiar" restaura el DOM EXACTO original (sin recargar)
+   - Plan normalizado: 'estandar'~'standard'; 'basico' incluye 'individual'
+   ======================================================================= */
+(function(){
+  'use strict';
+  if (window.__cuFilterBoundV6) return;
+  window.__cuFilterBoundV6 = true;
+
+  var table = document.getElementById('cuentasTable');
+  var box   = document.querySelector('div.__cuFilter__[data-scope="cuentas"]');
+  if (!table || !box || !table.tBodies || !table.tBodies.length) return;
+
+  var main   = box.querySelector('.cu-main');
+  var plan   = box.querySelector('.cu-plan');
+  var search = box.querySelector('.cu-search');
+  var clear  = box.querySelector('.cu-clear');
+  var targetTbody = table.tBodies[0];
+
+  function debounce(fn, wait){ var t; return function(){ var a=arguments, ctx=this; clearTimeout(t); t=setTimeout(function(){ fn.apply(ctx,a); }, wait||120); }; }
+  // ✅ Normaliza cualquier texto de plan a un slug sin tildes
+function normPlan(p){
+  const s = String(p || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // quita tildes
+    .toLowerCase().trim();
+
+  if (s.includes('premium')) return 'premium';
+  if (s.includes('stand') || s.includes('estandar')) return 'estandar';
+  if (s.includes('basic') || s.includes('individual')) return 'individual';
+  return 'individual';
+}
+
+// (Opcional) etiqueta para mostrar bonito en UI
+function planLabel(slug){
+  if (slug === 'estandar') return 'Estándar';
+  if (slug === 'individual') return 'Individual';
+  return 'Premium';
+}
+
+  function parseDaysFromParent(tr){
+    var td = tr && tr.cells && tr.cells[5];
+    if (!td) return 0;
+    var m = (td.textContent||'').trim().match(/-?\d+/);
+    return m ? parseInt(m[0],10) : 0;
+  }
+  function togglePlanSel(){
+    if (!plan || !main) return;
+    if ((main.value||'')==='plan') plan.style.display='';
+    else { plan.style.display='none'; plan.value=''; }
+  }
+  function collectAllRows(){
+    var out = [];
+    for (var b=0;b<table.tBodies.length;b++){
+      var rows = table.tBodies[b].rows;
+      for (var i=0;i<rows.length;i++) out.push(rows[i]);
+    }
+    return out;
+  }
+  function setSeparatorsDisplay(show){
+    for (var b=0;b<table.tBodies.length;b++){
+      var rows = table.tBodies[b].rows;
+      for (var i=0;i<rows.length;i++){
+        var tr = rows[i];
+        if (tr.hasAttribute('data-sep')) tr.style.display = show ? '' : 'none';
+      }
+    }
+  }
+  function buildGroups(){
+    var rows = collectAllRows();
+    var groups = [], cur=null;
+    for (var i=0;i<rows.length;i++){
+      var tr = rows[i];
+      if (tr.hasAttribute('data-sep')) continue;
+      if (tr.classList.contains('js-parent-row')){
+        cur = { parent: tr, children: [], orig: parseInt(tr.getAttribute('data-orig-idx')||'0',10) || 0 };
+        groups.push(cur);
+      } else if (cur){ cur.children.push(tr); }
+    }
+    return groups;
+  }
+  function groupMatchesFilters(g, sel, planSel, q){
+    var tr = g.parent, show = true;
+    if (sel==='pendientes'){
+      show = ((tr.textContent||'').toLowerCase().indexOf('pendiente')!==-1);
+    } else if (sel==='plan'){
+      var rowPlan = normPlan(tr.getAttribute('data-plan')||'');
+      if (planSel){
+        show = (planSel==='basico') ? (rowPlan==='basico'||rowPlan==='individual') : (rowPlan===planSel);
+      }
+    } else if (/^color_/.test(sel)){
+      show = tr.classList.contains('row-color-'+sel.replace(/^color_/,''));
+    }
+    if (show && q){
+      var correo  = (tr.getAttribute('data-correo')||'').toLowerCase();
+      var cliente = (tr.querySelector('.cliente')?.textContent||'').toLowerCase();
+      if (correo.indexOf(q)===-1 && cliente.indexOf(q)===-1) show=false;
+    }
+    return show;
+  }
+
+  // Snapshot DOM original (todas las filas y su tbody)
+  var __origOrder = (function(){
+    var snap = [];
+    for (var b=0;b<table.tBodies.length;b++){
+      var tb = table.tBodies[b];
+      var rows = tb.rows;
+      for (var i=0;i<rows.length;i++){
+        var tr = rows[i];
+        snap.push({ row: tr, parent: tb });
+      }
+    }
+    // Asignar indice original a padres (si falta)
+    var idx=0;
+    for (var k=0;k<snap.length;k++){
+      var tr = snap[k].row;
+      if (!tr.hasAttribute('data-sep') && tr.classList.contains('js-parent-row') && !tr.hasAttribute('data-orig-idx')){
+        tr.setAttribute('data-orig-idx', String(idx++));
+      }
+    }
+    return snap;
+  })();
+
+  function restoreOriginal(){
+    for (var i=0;i<__origOrder.length;i++){
+      var it = __origOrder[i];
+      it.parent.appendChild(it.row);
+      it.row.style.display = '';
+    }
+    setSeparatorsDisplay(true);
+  }
+
+  function apply(){
+    var q        = (search && search.value || '').trim().toLowerCase();
+    var sel      = (main && main.value || '');
+    var planSel  = normPlan(plan && plan.value || '');
+
+    var isDays   = (sel==='dias_asc' || sel==='dias_desc');
+    var anyFilter= isDays || !!(q || planSel || (/^(pendientes|plan|color_)/.test(sel)));
+
+    setSeparatorsDisplay(!anyFilter);
+
+    if (!anyFilter){ restoreOriginal(); return; }
+
+    if (isDays){
+      var groups = buildGroups();
+      for (var i=0;i<groups.length;i++){
+        var g = groups[i];
+        g.show = groupMatchesFilters(g, sel, planSel, q);
+        g.days = parseDaysFromParent(g.parent);
+      }
+      var order = groups.slice();
+      if (sel==='dias_asc') order.sort(function(a,b){ return (a.days-b.days)||(a.orig-b.orig); });
+      else                  order.sort(function(a,b){ return (b.days-a.days)||(a.orig-b.orig); });
+
+      var frag = document.createDocumentFragment();
+      for (var j=0;j<order.length;j++){
+        var gg = order[j];
+        gg.parent.style.display = gg.show ? '' : 'none';
+        frag.appendChild(gg.parent);
+        for (var h=0; h<gg.children.length; h++){
+          gg.children[h].style.display = gg.show ? '' : 'none';
+          frag.appendChild(gg.children[h]);
+        }
+      }
+      targetTbody.appendChild(frag);
+      return;
+    }
+
+    // solo filtro
+    var rows = collectAllRows();
+    var parentVisible = true;
+    for (var r=0;r<rows.length;r++){
+      var tr = rows[r];
+      if (tr.hasAttribute('data-sep')) continue;
+      var isParent = tr.classList.contains('js-parent-row');
+      if (isParent){
+        var show = groupMatchesFilters({parent:tr}, sel, planSel, q);
+        tr.style.display = show ? '' : 'none';
+        parentVisible = show;
+      } else {
+        tr.style.display = parentVisible ? '' : 'none';
+      }
+    }
+  }
+
+  if (main)   main.addEventListener('change', function(){ togglePlanSel(); apply(); });
+  if (plan)   plan.addEventListener('change', apply);
+  if (search) search.addEventListener('input', debounce(apply, 150));
+  if (clear)  clear.addEventListener('click', function(){
+    if (main)   main.value = '';
+    if (plan)   plan.value = '';
+    if (search) search.value = '';
+    togglePlanSel();
+    apply(); // restaura DOM exacto
+  });
+
+  togglePlanSel();
+  apply();
+
+  document.addEventListener('shown.bs.tab', function(e){
+    var t = e.target && (e.target.getAttribute('data-bs-target') || e.target.getAttribute('href')) || '';
+    if (t === '#cuentas') { togglePlanSel(); apply(); }
+  });
+})();
+
+
+
+/* =======================================================================
+   SPP (Plan/Color/Enviar) — Prefill por fila y reset en cierre
+   - Evita "estado pegado" entre filas: lee siempre data-plan/data-color de la fila activa
+   - Funciona con modal chico (#sppModal|#stockPausaPlanModal) o popover equivalente
+   ======================================================================= */
+(function(){
+  'use strict';
+  if (window.__sppFixBoundV2) return;
+  window.__sppFixBoundV2 = true;
+
+  var nextPlan = null, nextColor = null;
+
+  function pickRow(el){
+    var tr = el && el.closest ? el.closest('tr.js-parent-row') : null;
+    return tr || null;
+  }
+
+  // Capturamos el click en la celda de plan para "recordar" el contexto de la fila
+  document.addEventListener('click', function(ev){
+    var cell = ev.target.closest && (ev.target.closest('.plan-cell-cuenta') || ev.target.closest('.plan-cell-perfil'));
+    if (!cell) return;
+    var row = pickRow(cell);
+    if (!row) return;
+    nextPlan  = (row.getAttribute('data-plan') || '').toLowerCase();
+    nextColor = (row.getAttribute('data-color') || '').toLowerCase();
+    // No bloqueamos otros listeners: dejamos que se abra su modal/popover habitual
+  }, true);
+
+  function applyIfPresent(root){
+    if (!root) return;
+    // PLAN
+    var selPlan = root.querySelector('#spp_plan, select[name="plan"], select[data-spp="plan"]');
+    if (selPlan && nextPlan){
+      selPlan.value = nextPlan;
+      selPlan.dispatchEvent(new Event('change', { bubbles:true }));
+    }
+    // COLOR (select o radios)
+    var selColor = root.querySelector('#spp_color, select[name="color"], select[data-spp="color"]');
+    if (selColor){
+      if (nextColor){ selColor.value = nextColor; selColor.dispatchEvent(new Event('change',{bubbles:true})); }
+    } else {
+      var radio = nextColor ? root.querySelector('input[type="radio"][name="color"][value="'+nextColor+'"]') : null;
+      if (radio){ radio.checked = true; radio.dispatchEvent(new Event('change',{bubbles:true})); }
+    }
+  }
+
+  // Cuando el mini-modal esté visible, precargamos con el contexto de la fila
+  document.addEventListener('shown.bs.modal', function(e){
+    var id = (e.target && e.target.id) || '';
+    if (id==='sppModal' || id==='stockPausaPlanModal'){ applyIfPresent(e.target); }
+  });
+  // Si en tu implementación es popover, intenta inyectar cuando aparece en DOM
+  document.addEventListener('shown.bs.popover', function(e){
+    var tip = e.target && (e.target.getAttribute && document.querySelector(e.target.getAttribute('aria-describedby'))) || null;
+    if (tip) applyIfPresent(tip);
+  });
+
+  // Reset al cerrar para no heredar estado
+  document.addEventListener('hidden.bs.modal', function(e){
+    var id = (e.target && e.target.id) || '';
+    if (id==='sppModal' || id==='stockPausaPlanModal'){
+      var form = e.target.querySelector('form');
+      if (form) try { form.reset(); } catch(_){}
+      nextPlan = null; nextColor = null;
+    }
+  });
+})();
+
+
+
+/* ================================================================
+   PATCH: CuentaModal — Precio correcto en EDITAR + sin sobrescribir
+   - En EDITAR rellena `name="soles"` desde data-row.soles
+   - No toma precio de cabecera en EDITAR
+   - Elimina duplicados de inputs name="soles" en el modal
+   - Evita que otros listeners lo pisen re-aplicando en shown.bs.modal
+   ================================================================ */
+(function(){
+  'use strict';
+  var modal = document.getElementById('cuentaModal');
+  if (!modal || window.__cuentaModalPricePatchV1) return;
+  window.__cuentaModalPricePatchV1 = true;
+
+  function ensureSingleSoles(form){
+    if (!form) return null;
+    var list = Array.from(form.querySelectorAll('input[name="soles"]'));
+    if (!list.length) return null;
+    // Preferimos el primer input de tipo number
+    var keeper = list.find(function(i){ return (i.type||'').toLowerCase()==='number'; }) || list[0];
+    list.forEach(function(i){ if (i!==keeper) i.remove(); });
+    return keeper;
+  }
+
+  // Para guardar el contexto del trigger
+  modal.addEventListener('show.bs.modal', function(ev){
+    var trigger = ev.relatedTarget;
+    var form = modal.querySelector('form');
+    modal.dataset._mode = '';            // create|edit|prefill
+    modal.dataset._row  = '';
+
+    // Determinar modo
+    if (trigger && trigger.classList && trigger.classList.contains('btn-edit-cuenta')) {
+      modal.dataset._mode = 'edit';
+      // Capturamos el row del botón para usarlo en shown
+      var raw = trigger.getAttribute('data-row') || '';
+      if (!raw) {
+        // fallback a data-* o celdas
+        var tmp = {
+          soles: trigger.getAttribute('data-soles') || ''
+        };
+        modal.dataset._row = JSON.stringify(tmp);
+      } else {
+        modal.dataset._row = raw;
+      }
+    } else if (modal.dataset.prefill === '1') {
+      modal.dataset._mode = 'prefill';
+    } else {
+      modal.dataset._mode = 'create';
+    }
+
+    // Normalizamos inputs de precio antes de pintar
+    ensureSingleSoles(form);
+  }, true);
+
+  modal.addEventListener('shown.bs.modal', function(){
+    var form = modal.querySelector('form');
+    var inp  = ensureSingleSoles(form);
+    if (!inp) return;
+
+    var mode = modal.dataset._mode || '';
+    if (mode === 'edit') {
+      // Rellenar desde data-row.soles SÓLO en editar
+      var row = {};
+      try { row = JSON.parse(modal.dataset._row || '{}') || {}; } catch(_){ row = {}; }
+      var val = (row.soles != null) ? String(row.soles).trim() : '';
+      if (val !== '') {
+        inp.readOnly = false;
+        inp.removeAttribute('readonly');
+        inp.value = val;
+        // Disparar eventos por si hay validaciones externas
+        inp.dispatchEvent(new Event('input', { bubbles:true }));
+        inp.dispatchEvent(new Event('change', { bubbles:true }));
+      }
+    } else if (mode === 'create') {
+      // En crear, si hay cabezera de precio y QUIERES prefijar, déjalo vacío o usa header:
+      // const head = document.getElementById('precioCuentaHead');
+      // if (head && head.value.trim() !== '') inp.value = head.value.trim();
+      // Por defecto no tocamos para evitar pisar
+      inp.readOnly = false;
+      inp.removeAttribute('readonly');
+    } else if (mode === 'prefill') {
+      // Prefill desde fila padre: si hubiera dataset.soles, puedes bloquear o no. Aquí no forzamos readonly.
+      inp.readOnly = false;
+      inp.removeAttribute('readonly');
+    }
+  }, false);
+
+  // Limpieza al cerrar
+  modal.addEventListener('hidden.bs.modal', function(){
+    var form = modal.querySelector('form');
+    if (form) {
+      var inp = form.querySelector('input[name="soles"]');
+      if (inp) { inp.readOnly = false; inp.removeAttribute('readonly'); }
+    }
+    delete modal.dataset._mode;
+    delete modal.dataset._row;
+  }, false);
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(function(){
+  // Usa el modal propio de Familiar si existe; si no, el modal genérico (si lo compartes)
+  const modal = document.getElementById('modalCambiarPlanFamiliar')
+              || document.getElementById('modalCambiarPlanStockPausa');
+  if (!modal) return;
+
+  let lastFamTrigger = null;
+
+  // Captura la celda que abrió el modal (solo Familiar)
+  document.addEventListener('click', function(e){
+    const cell = e.target.closest('.plan-cell-familiar');
+    if (cell) lastFamTrigger = cell;
+  }, true);
+
+  function setField(form, nameOrSelector, value){
+    // Acepta: name="..." o un selector (ej. #idDelCampo)
+    let el = form.querySelector('[name="'+nameOrSelector+'"]') || form.querySelector(nameOrSelector);
+    if (el) el.value = value == null ? '' : value;
+  }
+
+  // ✅ Normaliza cualquier texto de plan a un slug sin tildes
+function normPlan(p){
+  const s = String(p || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // quita tildes
+    .toLowerCase().trim();
+
+  if (s.includes('premium')) return 'premium';
+  if (s.includes('stand') || s.includes('estandar')) return 'estandar';
+  if (s.includes('basic') || s.includes('individual')) return 'individual';
+  return 'individual';
+}
+
+// (Opcional) etiqueta para mostrar bonito en UI
+function planLabel(slug){
+  if (slug === 'estandar') return 'Estándar';
+  if (slug === 'individual') return 'Individual';
+  return 'Premium';
+}
+
+
+  modal.addEventListener('show.bs.modal', function(){
+    const form = modal.querySelector('form');
+    if (!form) return;
+
+    // Reset duro para no arrastrar valores previos
+    form.reset();
+
+    const cell = lastFamTrigger;
+    const tr   = cell ? cell.closest('tr') : null;
+
+    const id    = cell?.dataset.id || tr?.dataset.id || '';
+    const planR = cell?.dataset.plan || tr?.dataset.plan || '';
+    const plan  = normPlan(planR);
+    const color = (tr?.getAttribute('data-color') || '').toLowerCase();
+    const allowedColors = ['rojo','azul','verde','blanco'];
+
+    // Volcado al formulario (intenta por name=..., si no, por #id)
+    setField(form, 'tipo', 'familiar');      // name="tipo"
+    setField(form, '#spp_tipo', 'familiar'); // o #spp_tipo si compartes modal
+    setField(form, 'id', id);
+    setField(form, '#spp_id', id);
+    setField(form, 'plan', plan);
+    setField(form, '#spp_plan', plan);
+    setField(form, 'color', allowedColors.includes(color) ? color : '');
+    setField(form, '#spp_color', allowedColors.includes(color) ? color : '');
+    setField(form, 'destino', ''); // limpia destino previo
+    setField(form, '#spp_destino', '');
+  });
+
+  modal.addEventListener('hidden.bs.modal', function(){
+    const form = modal.querySelector('form');
+    if (form) form.reset();
+    lastFamTrigger = null;
+  });
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// --- PATCH SCOPED Familiar: forzar apertura y prefill, sin bloquear otros modals ---
+(function(){
+  'use strict';
+  if (window.__famForceOpenPatch) return;
+  window.__famForceOpenPatch = true;
+
+  // Ubica el modal de Familiar (propio o compartido)
+  var famModal = document.getElementById('modalCambiarPlanFamiliar')
+             || document.getElementById('modalCambiarPlanStockPausa');
+  if (!famModal) return;
+
+  // Normaliza triggers dentro de Familiar para que apunten al modal correcto
+  function normalizeFamTriggers(){
+    var sel = [
+      '#familiar .plan-cell-familiar',
+      '#familiarTable .plan-cell-familiar',
+      '[data-scope="familiar"] .plan-cell-familiar',
+      '[data-familiar="1"] .plan-cell-familiar'
+    ].join(',');
+    document.querySelectorAll(sel).forEach(function(cell){
+      cell.setAttribute('data-bs-toggle', 'modal');
+      cell.setAttribute('data-bs-target', '#'+famModal.id);
+    });
+  }
+  normalizeFamTriggers();
+  document.addEventListener('DOMContentLoaded', normalizeFamTriggers);
+
+  // Si algún script impide que Bootstrap abra el modal por Data-API,
+  // abrimos programáticamente sin bloquear a otros
+  document.addEventListener('click', function(e){
+    var cell = e.target.closest('.plan-cell-familiar');
+    if (!cell) return;
+    // Deja que Bootstrap lo intente; si no abre, abrimos en fallback
+    setTimeout(function(){
+      if (!famModal.classList.contains('show')) {
+        var m = bootstrap.Modal.getOrCreateInstance(famModal);
+        m.show();
+      }
+    }, 0);
+  }, false);
+
+  // ✅ Normaliza cualquier texto de plan a un slug sin tildes
+function normPlan(p){
+  const s = String(p || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // quita tildes
+    .toLowerCase().trim();
+
+  if (s.includes('premium')) return 'premium';
+  if (s.includes('stand') || s.includes('estandar')) return 'estandar';
+  if (s.includes('basic') || s.includes('individual')) return 'individual';
+  return 'individual';
+}
+
+// (Opcional) etiqueta para mostrar bonito en UI
+function planLabel(slug){
+  if (slug === 'estandar') return 'Estándar';
+  if (slug === 'individual') return 'Individual';
+  return 'Premium';
+}
+
+  function setVal(form, a, b, v){
+    var el = form.querySelector(a) || form.querySelector(b);
+    if (!el) return;
+    el.value = (v==null) ? '' : v;
+    el.dispatchEvent(new Event('change', {bubbles:true}));
+  }
+  function getRowColor(tr){
+    if (!tr) return '';
+    var attr = (tr.getAttribute('data-color')||'').toLowerCase();
+    if (attr) return attr;
+    var cls = (Array.from(tr.classList||[]).find(function(c){return c.indexOf('row-color-')===0;})||'');
+    return cls.replace('row-color-','');
+  }
+
+  // Prefill SOLO cuando se abre el modal de Familiar (o el compartido), usando el trigger
+  famModal.addEventListener('show.bs.modal', function(ev){
+    var form = famModal.querySelector('form');
+    if (!form) return;
+
+    // Reset duro (evita “color pegado”)
+    form.reset();
+
+    var trigger = ev.relatedTarget || document.querySelector('.plan-cell-familiar:focus') || null;
+    var cell = trigger && trigger.closest ? trigger.closest('.plan-cell-familiar') : null;
+    var tr   = cell ? cell.closest('tr') : null;
+
+    // Si el trigger no viene de Familiar, no tocamos nada (no interferimos con otros modals)
+    if (!cell) return;
+
+    // PLAN / ID / TIPO
+    var planRaw = (cell.getAttribute('data-plan') || (tr ? tr.getAttribute('data-plan') : '') || '');
+    setVal(form, '#spp_plan',  '[name="plan"]',  normPlan(planRaw));
+    setVal(form, '#spp_id',    '[name="id"]',    cell.getAttribute('data-id') || (tr ? tr.getAttribute('data-id') : '') || '');
+    setVal(form, '#spp_tipo',  '[name="tipo"]',  'familiar');
+
+    // COLOR: reset select y aplicar el color de ESTA fila
+    var sel = form.querySelector('#spp_color') || form.querySelector('[name="color"]');
+    if (sel) {
+      sel.querySelectorAll('option[selected]').forEach(function(o){ o.removeAttribute('selected'); });
+      sel.selectedIndex = 0; sel.value = '';
+      sel.dispatchEvent(new Event('change', {bubbles:true}));
+
+      var picked = getRowColor(tr);
+      var ok = ['rojo','azul','verde','blanco'].indexOf(picked) >= 0 ? picked : '';
+      if (ok === '' && sel.options.length > 0 && !sel.querySelector('option[value=""]')) {
+        sel.selectedIndex = 0;
+      } else {
+        sel.value = ok;
+      }
+      sel.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+  });
+
+  famModal.addEventListener('hidden.bs.modal', function(){
+    var form = famModal.querySelector('form');
+    if (form) form.reset();
+  });
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+// --- PATCH SCOPED Familiar v2: color predeterminado según la fila ---
+(function(){
+  'use strict';
+  if (window.__famColorScopedV2) return;
+  window.__famColorScopedV2 = true;
+
+  let lastFamTrigger = null;
+  document.addEventListener('click', function(e){
+    const cell = e.target.closest('.plan-cell-familiar');
+    if (cell) lastFamTrigger = cell;
+  }, true);
+
+  function getFamModal(){
+    const el = document.getElementById('perfilColorSelect') || document.getElementById('perfilPlanSelect');
+    return el ? el.closest('.modal') : null;
+  }
+  const modal = getFamModal();
+  if (!modal) return;
+
+  // ✅ Normaliza cualquier texto de plan a un slug sin tildes
+function normPlan(p){
+  const s = String(p || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g,'') // quita tildes
+    .toLowerCase().trim();
+
+  if (s.includes('premium')) return 'premium';
+  if (s.includes('stand') || s.includes('estandar')) return 'estandar';
+  if (s.includes('basic') || s.includes('individual')) return 'individual';
+  return 'individual';
+}
+
+// (Opcional) etiqueta para mostrar bonito en UI
+function planLabel(slug){
+  if (slug === 'estandar') return 'Estándar';
+  if (slug === 'individual') return 'Individual';
+  return 'Premium';
+}
+
+
+  function getRow(tr){
+    if (tr) return tr;
+    if (lastFamTrigger) return lastFamTrigger.closest('tr');
+    return null;
+  }
+
+  function pickColorFromRow(tr){
+    if (!tr) return '';
+    let picked = (tr.getAttribute('data-color') || '').toLowerCase();
+    if (!picked) {
+      const cls = Array.from(tr.classList || []).find(c => c.indexOf('row-color-') === 0);
+      if (cls) picked = cls.replace('row-color-','');
+    }
+    const allowed = ['rojo','azul','verde','blanco'];
+    return allowed.includes(picked) ? picked : '';
+  }
+
+  function setSelectValue(sel, value){
+    if (!sel) return;
+    // reset duro
+    Array.from(sel.options).forEach(o => o.selected = false);
+    if (value) {
+      const opt = Array.from(sel.options).find(o => o.value === value);
+      if (opt) opt.selected = true; else sel.selectedIndex = 0;
+    } else {
+      sel.selectedIndex = 0;
+    }
+    sel.dispatchEvent(new Event('change', {bubbles:true}));
+  }
+
+  // Prefill final al estar visible (evita que otros listeners lo pisen)
+  modal.addEventListener('shown.bs.modal', function(ev){
+    const planSel   = modal.querySelector('#perfilPlanSelect');
+    const colorSel  = modal.querySelector('#perfilColorSelect');
+    const enviarSel = modal.querySelector('#perfilEnviarASelect');
+    const idHidden  = modal.querySelector('#perfilPlanId');
+
+    // Contexto
+    let trigger = ev.relatedTarget || document.activeElement || lastFamTrigger;
+    let tr = trigger ? trigger.closest && trigger.closest('tr') : null;
+    tr = getRow(tr);
+    if (!tr) return;
+
+    // ID
+    const rid = (trigger?.dataset?.id || tr.getAttribute('data-id') || '').trim();
+    if (idHidden) idHidden.value = rid;
+
+    // PLAN
+    if (planSel) {
+      const planRaw = (trigger?.dataset?.plan || tr.getAttribute('data-plan') || '');
+      planSel.value = normPlan(planRaw);
+      planSel.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+
+    // COLOR (como predeterminado el de la fila)
+    if (colorSel) {
+      const picked = pickColorFromRow(tr);
+      setSelectValue(colorSel, picked);
+      // Etiqueta de la primera opción: “actual: <color>” o “(sin color)”
+      if (colorSel.options[0]) {
+        colorSel.options[0].textContent = picked ? ('actual: ' + picked) : '(sin color)';
+      }
+    }
+
+    // Enviar a (restablecer)
+    if (enviarSel) {
+      enviarSel.value = 'none';
+      enviarSel.dispatchEvent(new Event('change', {bubbles:true}));
+    }
+
+    // Salvaguarda: si algún script reescribe luego, re-aplicamos al siguiente tick
+    setTimeout(function(){
+      if (colorSel) {
+        const picked = pickColorFromRow(tr);
+        if (colorSel.value !== picked) {
+          setSelectValue(colorSel, picked);
+          if (colorSel.options[0]) {
+            colorSel.options[0].textContent = picked ? ('actual: ' + picked) : '(sin color)';
+          }
+        }
+      }
+    }, 0);
+  });
+
+  // Limpieza al cerrar
+  modal.addEventListener('hidden.bs.modal', function(){
+    const colorSel  = modal.querySelector('#perfilColorSelect');
+    const enviarSel = modal.querySelector('#perfilEnviarASelect');
+    if (colorSel) {
+      Array.from(colorSel.options).forEach(o => o.selected = false);
+      colorSel.selectedIndex = 0;
+      colorSel.value = '';
+      if (colorSel.options[0]) colorSel.options[0].textContent = '(sin color)';
+    }
+    if (enviarSel) enviarSel.value = 'none';
+  });
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// PATCH: Editar → prefill de precio y split de teléfono (wa_cc / wa_local)
+(function(){
+  'use strict';
+
+  // Ids de modales donde queremos el comportamiento (ajusta si usas otros)
+  var MODALS = ['perfilModal','perfilFamiliarModal','cuentaModal'];
+
+  function parsePhone(raw){
+    var s = String(raw || '').trim();
+    // quita espacios, deja solo + y dígitos
+    s = s.replace(/\s+/g,'');
+    if (s.startsWith('+')) s = s.slice(1);
+    s = s.replace(/[^\d]/g,'');
+    if (!s) return { cc:'', local:'' };
+
+    // Regla: últimos 9 dígitos = número local; lo anterior = CC
+    if (s.length > 9){
+      return { cc: s.slice(0, s.length - 9), local: s.slice(-9).replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') };
+    }
+    // si solo hay 9 dígitos, va todo al local
+    return { cc:'', local: s.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3') };
+  }
+
+  function wireEditModal(modalId){
+    var modal = document.getElementById(modalId);
+    if (!modal) return;
+
+    modal.addEventListener('show.bs.modal', function(ev){
+      var trigger = ev.relatedTarget;
+      if (!trigger) return; // sin disparador (apertura programática): no tocamos
+
+      // Solo si el botón tiene data-row (caso EDITAR). El "Agregar" no lo trae.
+      var raw = trigger.getAttribute('data-row');
+      if (!raw) return;
+
+      var row = {};
+      try { row = JSON.parse(raw); } catch(_){}
+
+      // --- PRECIO ---
+      // Buscamos un input[name="soles"] (cubre #modalChildPrecio, #modalPerfilPrecio, etc)
+      var priceInput = modal.querySelector('input[name="soles"]');
+      if (priceInput){
+        var pv = (row.soles != null && row.soles !== '') ? String(row.soles) : '';
+        if (pv !== ''){
+          // Quitar cualquier readonly que venga de la lógica "Agregar hijo"
+          priceInput.readOnly = false;
+          priceInput.removeAttribute('readonly');
+          // Normaliza a decimal con punto
+          var n = parseFloat(pv);
+          priceInput.value = isNaN(n) ? pv : n.toString();
+          // Notificar a posibles listeners
+          priceInput.dispatchEvent(new Event('input', {bubbles:true}));
+          priceInput.dispatchEvent(new Event('change', {bubbles:true}));
+        }
+      }
+
+      // --- TELÉFONO ---
+      // Si el modal tiene wa_cc / wa_local, los rellenamos a partir de row.whatsapp / row.wa_e164 / row.wa_digits
+      var ccInp    = modal.querySelector('input[name="wa_cc"]');
+      var localInp = modal.querySelector('input[name="wa_local"]');
+      if (ccInp || localInp){
+        var src = row.whatsapp || row.wa_e164 || row.wa_digits || '';
+        var ph  = parsePhone(src);
+        if (ccInp)    ccInp.value    = ph.cc;
+        if (localInp) localInp.value = ph.local;
+      }
+    });
+  }
+
+  MODALS.forEach(wireEditModal);
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// ==== Filtros SOLO para STREAMING FAMILIAR (scope: perfiles-fam) ====
+(function(){
+  'use strict';
+  if (window.__famFiltersV2__) return;
+  window.__famFiltersV2__ = true;
+
+  const SCOPE  = document.querySelector('[data-scope="perfiles-fam"]');
+  const TABLE  = document.getElementById('perfilesFamiliarTable');
+  if (!SCOPE || !TABLE || !TABLE.tBodies.length) return;
+  const TBODY  = TABLE.tBodies[0];
+
+  const selMain   = SCOPE.querySelector('.pc-main');
+  const selPlan   = SCOPE.querySelector('.pc-plan');
+  const inpSearch = SCOPE.querySelector('.pc-search');
+  const btnClear  = SCOPE.querySelector('.btn.cu-clear, .btn.pc-clear') || SCOPE.querySelector('.btn.btn-outline-secondary');
+
+  const norm = (s)=> (s||'').toString().toLowerCase().trim();
+
+  function isSeparator(tr){
+    return tr.hasAttribute('data-sep');
+  }
+
+  function isParentRow(tr){
+    if (tr.classList.contains('js-parent-row')) return true;
+    if ((tr.getAttribute('data-entidad')||'') === 'perfil_fam' && tr.getAttribute('tabindex') === '0') return true;
+    const c = tr.querySelector('td.correo-cell');
+    return !!(c && c.textContent.trim() !== '');
+  }
+
+  function buildGroups(){
+    const rows   = Array.from(TBODY.querySelectorAll('tr'));
+    const groups = [];
+    let current  = [];
+    for (const r of rows){
+      if (isSeparator(r)) {
+        // No lo incluimos en grupos; se maneja aparte (mostrar/ocultar)
+        if (current.length) { groups.push(current); current = []; }
+        continue;
+      }
+      if (isParentRow(r)) {
+        if (current.length) groups.push(current);
+        current = [r];
+      } else {
+        if (!current.length) current = [r];
+        else current.push(r);
+      }
+    }
+    if (current.length) groups.push(current);
+    return groups;
+  }
+
+  function parentColor(tr){
+    const attr = norm(tr.getAttribute('data-color'));
+    if (attr) return attr;
+    const m = (tr.className||'').match(/\brow-color-([a-záéíóúñ]+)\b/i);
+    return m ? norm(m[1]) : '';
+  }
+
+  function parentPlan(tr){
+    const raw = norm(tr.getAttribute('data-plan') || (tr.querySelector('.plan-cell-familiar')?.textContent));
+    if (!raw) return '';
+    if (raw.includes('premium')) return 'premium';
+    if (raw.includes('estándar') || raw.includes('estandar') || raw.includes('standard')) return 'estandar';
+    if (raw.includes('básico') || raw.includes('basico') || raw.includes('individual')) return 'basico';
+    return raw;
+  }
+
+  function parentEstado(tr){
+    const fromBadge = tr.querySelector('.badge')?.textContent;
+    return norm(fromBadge || tr.getAttribute('data-estado'));
+  }
+
+  function parentDias(tr){
+    // Columna 6 = DÍAS (como en el HTML actual)
+    const cell = tr.querySelector('td:nth-child(6)');
+    if (!cell) return 0;
+    const n = parseInt(cell.textContent.replace(/[^\d\-]/g, ''), 10);
+    return Number.isFinite(n) ? n : 0;
+  }
+
+  function hideSeparators(hide){
+    TBODY.querySelectorAll('tr[data-sep]').forEach(sep=>{
+      sep.classList.toggle('d-none', !!hide);
+    });
+  }
+
+  function applyFilters(){
+  const groups = buildGroups();
+
+  const mainVal = selMain ? selMain.value : '';
+  if (selPlan) {
+    // Mostrar subfiltro de plan solo cuando corresponde
+    selPlan.style.display = (mainVal === 'plan') ? '' : 'none';
+    if (mainVal !== 'plan') selPlan.value = '';
+  }
+  const planReq = selPlan ? selPlan.value : '';
+  const q = norm(inpSearch ? inpSearch.value : '');
+
+  const anyFilter = !!(mainVal || planReq || q);
+  hideSeparators(anyFilter);
+  // Mostrar/ocultar paginador de PERFILES según haya filtros activos
+  try {
+    const pane   = SCOPE.closest('#perfiles'); // tab-pane de Perfiles
+    if (pane) {
+      const pager = pane.querySelector('nav[data-pager="perfiles"]');
+      if (pager) {
+        pager.classList.toggle('d-none', !!anyFilter);
+      }
+    }
+  } catch(e) {
+    // silencioso
+  }
+
+  // Aplica filtros por grupo (padre + hijos)
+  groups.forEach(g=>{
+    const parent = g[0];
+    let ok = true;
+
+    if (q) {
+      const txt = norm(g.map(r=>r.textContent).join(' '));
+      if (!txt.includes(q)) ok = false;
+    }
+
+    if (ok && mainVal) {
+      if (mainVal === 'pendientes') {
+        if (parentEstado(parent) !== 'pendiente') ok = false;
+      } else if (mainVal === 'color_rojo' || mainVal === 'color_azul' || mainVal === 'color_verde' || mainVal === 'color_blanco') {
+        const want = mainVal.split('_')[1]; // rojo|azul|verde|blanco
+        if (parentColor(parent) !== want) ok = false;
+      } else if (mainVal === 'plan' && planReq) {
+        if (parentPlan(parent) !== planReq) ok = false;
+      }
+      // dias_asc / dias_desc se manejan como orden, no filtran
+    }
+
+    g.forEach(tr => tr.classList.toggle('d-none', !ok));
+  });
+
+  if (mainVal === 'dias_asc' || mainVal === 'dias_desc') {
+    const visibleGroups = groups.filter(g => !g[0].classList.contains('d-none'));
+    visibleGroups.sort((a,b)=>{
+      const da = parentDias(a[0]), db = parentDias(b[0]);
+      return mainVal === 'dias_asc' ? (da - db) : (db - da);
+    });
+    const frag = document.createDocumentFragment();
+    visibleGroups.forEach(g => g.forEach(tr => frag.appendChild(tr)));
+    TBODY.appendChild(frag);
+  }
+
+  // FIX: 'anyfilters' -> 'anyFilter' (JS es case-sensitive)
+  if (!anyFilter) {
+    hideSeparators(false);
+  }
+}
+
+
+  // Listeners
+  if (selMain) selMain.addEventListener('change', applyFilters);
+  if (selPlan) selPlan.addEventListener('change', applyFilters);
+  if (inpSearch) {
+    let t; 
+    inpSearch.addEventListener('input', ()=>{ clearTimeout(t); t = setTimeout(applyFilters, 120); });
+  }
+  if (btnClear) {
+    btnClear.addEventListener('click', ()=>{
+      if (selMain) selMain.value = '';
+      if (selPlan){ selPlan.value=''; selPlan.style.display='none'; }
+      if (inpSearch) inpSearch.value = '';
+      hideSeparators(false);
+      applyFilters();
+    });
+  }
+
+  // Primera pasada
+  applyFilters();
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+(function () {
+  'use strict';
+  if (window.__famChildPatch) return; window.__famChildPatch = true;
+
+  // 🔧 Si tu modal de familiar tiene otro id, cámbialo aquí:
+  var MODAL_ID = 'perfilFamiliarModal';
+
+  // Asegura que al clickear "Agregar hijo" el modal conozca el modo
+  document.addEventListener('click', function (ev) {
+    var btn = ev.target.closest('[data-bs-target="#' + MODAL_ID + '"][data-mode="add-hijo"]');
+    if (!btn) return;
+    var m = document.getElementById(MODAL_ID);
+    if (m) m.dataset.mode = 'add-hijo';
+  });
+
+  // Al abrir el modal en modo "add-hijo", forzamos valores y desbloqueos
+  document.addEventListener('show.bs.modal', function (ev) {
+    var m = ev.target;
+    if (m.id !== MODAL_ID) return;
+    if ((m.dataset.mode || '') !== 'add-hijo') return;
+
+    // Evita prefills heredados/“precio ancla” de otros scripts
+    m.dataset.skipAnchor = '1';
+
+    // Campos
+    var correo  = m.querySelector('input[name="correo"], #correo');
+    var pass    = m.querySelector('input[name="password"], #password');
+    var precio  = m.querySelector('input[name="soles"], input[name="precio"], #soles');
+
+    if (correo) {
+      correo.value = '';                 // correo en blanco
+      correo.readOnly = false;
+      correo.disabled = false;
+      correo.classList.remove('disabled','is-invalid','readonly');
+    }
+
+    if (pass) {
+      pass.value = 'reasonly';           // contraseña por defecto
+      pass.readOnly = false;
+      pass.disabled = false;
+      pass.classList.remove('disabled','readonly');
+    }
+
+    if (precio) {
+      // precio editable (por si hay lógica de bloqueo previa)
+      precio.readOnly = false;
+      precio.disabled = false;
+      precio.removeAttribute('data-locked');
+      precio.classList.remove('disabled','readonly');
+    }
+  });
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+// SOLO FAMILIAR: abrir modal al clickear fila PADRE dentro del pane #perfiles-familiar
+(function () {
+  var MODAL_ID = 'perfilFamiliarModal';
+
+  // Reemplaza el document.addEventListener('click', ...) global por este:
+  document.addEventListener('click', function (ev) {
+    // Limita el alcance al tab Familiar
+    var famPane = document.getElementById('perfiles-familiar');
+    if (!famPane || !famPane.contains(ev.target)) return;
+
+    // Ignora botones/acciones explícitas
+    var ignore = ev.target.closest('.js-row-action, [data-no-row-modal="1"]');
+    if (ignore) return;
+
+    // Solo filas PADRE de la tabla familiar
+    var tr = ev.target.closest('#perfilesFamiliarTable tr.js-parent-row');
+    if (!tr) return;
+
+    var m = document.getElementById(MODAL_ID);
+    if (!m) return;
+
+    // --- lo que ya tenías a partir de aquí, sin cambios ---
+    // Señales de contexto
+    m.dataset.mode = 'add-hijo';
+    m.dataset.skipAnchor = '1';
+
+    // Limpia el formulario
+    var form = m.querySelector('form');
+    if (form) form.reset();
+
+    // Prellenar campos desde el padre (correo, pass, etc.)
+    var correo = tr.dataset.correo || (tr.querySelector('.correo-cell')?.textContent || '').trim();
+    var pass   = m.querySelector('input[name="password_plain"]');
+    var correoInput = m.querySelector('input[name="correo"]');
+
+    if (correoInput) correoInput.value = correo || '';
+    if (pass) {
+      // Si prefieres copiar la del padre:
+      // pass.value = tr.dataset.password || '';
+      // Si prefieres tu DEFAULT_PASS, deja como estaba:
+      pass.value = (typeof DEFAULT_PASS !== 'undefined') ? DEFAULT_PASS : (tr.dataset.password || '');
+      pass.readOnly = true;
+      pass.disabled = false;
+      pass.classList.add('readonly');
+    }
+
+    // Otros datos útiles del padre
+    var hidSid = m.querySelector('input[name="streaming_id"]');
+    if (hidSid && tr.dataset.streaming_id) {
+      hidSid.value = tr.dataset.streaming_id;
+    }
+
+    // Muestra modal
+    if (window.bootstrap?.Modal) {
+      bootstrap.Modal.getOrCreateInstance(m).show();
+    } else {
+      m.classList.add('show');
+      m.style.display = 'block';
+    }
+  }, true);
+})();
+
+
+
+
+
+(function () {
+  const form = document.getElementById('formPlanStockPausa');
+  if (!form || form.dataset._colorBound === '1') return; // evitar doble binding
+  form.dataset._colorBound = '1';
+
+  form.addEventListener('submit', async function (ev) {
+    // OJO: si ya tienes otro handler que hace el fetch/submit, NO dupliques envío.
+    // Este bloque SOLO re-pinta el <tr> cuando la respuesta es OK.
+    // Si tú manejas el fetch en otro lado, deja ese y añade SOLO la parte "aplicarColorEnFila(...)".
+
+    // Deja que el handler que ya tengas haga el submit/fetch.
+    // Para enganchar post-OK, usa un pequeño retardo y lee el último estado del modal.
+    setTimeout(() => {
+      try {
+        const id   = Number(document.getElementById('spp_id')?.value || 0);
+        const tipo = (document.getElementById('spp_tipo')?.value === 'pausa') ? 'pausa' : 'stock';
+        let color  = document.getElementById('spp_color')?.value || '';
+
+        // normaliza color
+        if (color === 'restablecer') color = '';
+        const allowed = ['rojo','azul','verde','blanco',''];
+        if (!allowed.includes(color)) color = '';
+
+        // aplica en DOM
+        const cellSel = (tipo === 'pausa')
+          ? `.plan-cell-pausa[data-id="${id}"]`
+          : `.plan-cell-stock[data-id="${id}"]`;
+
+        const td = document.querySelector(cellSel);
+        const tr = td?.closest('tr');
+        if (tr) {
+          tr.dataset.color = color || '';
+          tr.classList.remove('row-color-rojo','row-color-azul','row-color-verde','row-color-blanco');
+          if (color) tr.classList.add('row-color-' + color);
+        }
+      } catch (_) {}
+    }, 0);
+  }, true);
+})();
+
+
+(function () {
+  'use strict';
+  if (window.__famPassFixBound) return; window.__famPassFixBound = true;
+
+  var famModal = document.getElementById('perfilFamiliarModal');
+  if (!famModal) return;
+
+  // 1) Al hacer clic en "Agregar familiar" (PADRE), fuerza contexto padre
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('.btn-add-perfil-fam, [data-modal-context="parent"]');
+    if (!btn) return;
+    famModal.dataset.prefill = '';              // quita prefill de hijo
+    famModal.dataset.modalContext = 'parent';   // marca contexto PADRE
+  }, true);
+
+  // 2) En show: si es PADRE, habilita contraseña editable y limpia mirrors
+  famModal.addEventListener('show.bs.modal', function(ev){
+    var form = famModal.querySelector('form'); if (!form) return;
+
+    var isParent = (famModal.dataset.modalContext === 'parent') ||
+                   (!!ev.relatedTarget && ev.relatedTarget.matches &&
+                    ev.relatedTarget.matches('.btn-add-perfil-fam, [data-modal-context="parent"]'));
+    if (!isParent) return;
+
+    var pass = form.querySelector('input[name="password_plain"]');
+    if (pass) {
+      pass.removeAttribute('readonly');
+      pass.disabled = false;
+      pass.classList.remove('bg-light','disabled');
+      pass.value = '';                 // editable y vacío
+      pass.placeholder = 'Contraseña';
+    }
+    // Eliminar mirrors que se usan en modo hijo
+    var mirror  = form.querySelector('input[name="password_plain_mirror"]');
+    if (mirror) mirror.remove();
+    var truePass = form.querySelector('input[name="password_plain__true"]');
+    if (truePass) truePass.remove();
+  }, true);
+
+  // 3) Cleanup: al cerrar, limpia flags para que no se arrastre el modo
+  famModal.addEventListener('hidden.bs.modal', function(){
+    delete famModal.dataset.prefill;
+    delete famModal.dataset.modalContext;
+  }, true);
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ====== STREAMING FAMILIAR: abrir SIEMPRE el modal correcto (hijo) ====== */
+(function () {
+  'use strict';
+  if (window.__famRowOpenFixV2) return; window.__famRowOpenFixV2 = true;
+
+  var famPane  = document.getElementById('perfiles-familiar');
+  var famModal = document.getElementById('perfilFamiliarModal');
+  if (!famPane || !famModal || !window.bootstrap) return;
+
+  function openFamChildFromRow(tr){
+    // Señales del padre
+    var correo = tr.getAttribute('data-correo') || '';
+    var pass   = tr.getAttribute('data-password') || '';
+    var soles  = tr.getAttribute('data-soles') || '';
+    var plan   = tr.getAttribute('data-plan') || 'premium';
+    var combo  = tr.getAttribute('data-combo') || '0';
+    var sid    = tr.getAttribute('data-streaming_id') || '';
+
+    // Contexto para show.bs.modal
+    famModal.dataset.prefill       = '1';
+    famModal.dataset.modalContext  = 'child';
+    famModal.dataset.correo        = correo;
+    famModal.dataset.password      = pass;
+    famModal.dataset.soles         = soles;
+    famModal.dataset.plan          = plan;
+    famModal.dataset.combo         = combo;
+    famModal.dataset.streaming_id  = sid;
+
+    // Título
+    var title = document.getElementById('perfilFamiliarModalLabel');
+    if (title) title.textContent = 'Agregar a correo: ' + correo;
+
+    // Limpieza y prefill básico de campos
+    var form = famModal.querySelector('form');
+    if (form) {
+      try { form.reset(); } catch(_){}
+      // correo vacío/editable
+      var iCorreo = form.querySelector('input[name="correo"]');
+      if (iCorreo) { iCorreo.value = ''; iCorreo.readOnly = false; iCorreo.disabled = false; iCorreo.placeholder = correo; }
+      // precio vacío/editable
+      var iPrecio = form.querySelector('input[name="soles"]');
+      if (iPrecio) { iPrecio.value = ''; iPrecio.readOnly = false; iPrecio.disabled = false; }
+      // password visible: predeterminado y readonly (UI), espejo oculto con la real
+      var iPass = form.querySelector('input[name="password_plain"]');
+      if (iPass) {
+        // espejo
+        var mirror = form.querySelector('input[name="password_plain_mirror"]') || (function(){
+          var h = document.createElement('input'); h.type='hidden'; h.name='password_plain_mirror'; form.appendChild(h); return h;
+        })();
+        mirror.value = pass || '1234';
+        iPass.value = '1234'; iPass.readOnly = true; iPass.classList.add('bg-light');
+      }
+      // plan hidden (si existe)
+      var iPlan = form.querySelector('input[name="plan"]'); if (iPlan) iPlan.value = plan || 'premium';
+    }
+
+    // Abrir modal familiar (hijo)
+    bootstrap.Modal.getOrCreateInstance(famModal).show();
+  }
+
+  // Captura de clicks SOLO dentro de la pestaña Familiar
+  // Captura de clicks SOLO dentro de la pestaña Familiar
+// Captura de clicks SOLO dentro de la pestaña Familiar
+
+  // Captura de clicks SOLO dentro de la pestaña Familiar
+   // captura para ganar prioridad
+
+
+
+})();
+
+
+
+
+
+
+
+
+
+
+/* ================================
+   FAMILIAR: ancla de precio (primer hijo)
+   ================================ */
+(function(){
+  'use strict';
+  if (window.__famAnchorScoped) return; window.__famAnchorScoped = true;
+
+  var famPane  = document.getElementById('perfiles-familiar');
+  var famModal = document.getElementById('perfilFamiliarModal');
+  if (!famPane || !famModal) return;
+
+  var lastFamParentRow = null;
+
+  // Detecta última fila padre clickeada en la pestaña Familiar
+  document.addEventListener('click', function(e){
+    var tr = e.target && e.target.closest && e.target.closest('tr.js-parent-row');
+    if (!tr) return;
+    if (!famPane.contains(tr)) return;
+    if ((tr.getAttribute('data-entidad') || '') !== 'perfil_fam') return;
+    lastFamParentRow = tr;
+  }, false); // en burbuja, no bloqueamos nada de Perfiles
+
+  // Al abrir el modal de Familiar en modo hijo, si hay ancla => fijar precio readonly
+  famModal.addEventListener('show.bs.modal', function(){
+    // Solo si venimos de fila (modo hijo)
+    if (!(famModal.dataset && famModal.dataset.prefill === '1')) return;
+    if (!lastFamParentRow) return;
+
+    var inp = famModal.querySelector('input[name="soles"]');
+    if (!inp) return;
+
+    var anchor = lastFamParentRow.getAttribute('data-child-anchor') || '';
+    if (anchor) {
+      inp.value = anchor;
+      inp.readOnly = true;
+      inp.classList.add('bg-light');
+    } else {
+      inp.readOnly = false;
+      inp.classList.remove('bg-light');
+      if (!inp.value) inp.value = '';
+    }
+
+    // Título con correo (si no lo tienes en otro lado)
+    var correo = famModal.dataset.correo || lastFamParentRow.getAttribute('data-correo') || '';
+    var title  = document.getElementById('perfilFamiliarModalLabel');
+    if (title && correo) title.textContent = 'Agregar a correo: ' + correo;
+  }, false);
+
+  // Al guardar el PRIMER hijo (sin ancla previa), fijamos el ancla en el <tr>
+  famModal.addEventListener('click', function(e){
+    var btn = e.target && e.target.closest && e.target.closest('button[type="submit"], input[type="submit"]');
+    if (!btn) return;
+    if (!(famModal.dataset && famModal.dataset.prefill === '1')) return; // solo hijos
+    if (!lastFamParentRow) return;
+
+    var hasAnchor = !!lastFamParentRow.getAttribute('data-child-anchor');
+    if (hasAnchor) return;
+
+    var form = famModal.querySelector('form'); if (!form) return;
+    if (typeof form.checkValidity === 'function' && !form.checkValidity()) return;
+
+    var inp = famModal.querySelector('input[name="soles"]');
+    var val = (inp && String(inp.value||'').trim()) || '';
+    if (val) {
+      lastFamParentRow.setAttribute('data-child-anchor', val);
+      // no hacemos preventDefault: dejamos que el envío nativo continúe
+    }
+  }, false);
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+/* ===========================================================
+   PERFILES — Fijar precio del segundo hijo (ancla fiable)
+   Lee el precio del primer hijo desde la col 9 del primer <tr>
+   hijo y bloquea el input en el modal.
+   =========================================================== */
+(function fixPerfilSecondChildAnchor(){
+  'use strict';
+  try {
+    var modal = document.getElementById('perfilModal');
+    if (!modal || window.__perfilAnchorFixV2) return;
+    window.__perfilAnchorFixV2 = true;
+
+    function parseNum(s){
+      if (s == null) return NaN;
+      var n = String(s).replace(/[^\d.,-]/g,'').replace(',', '.');
+      var f = parseFloat(n);
+      return isNaN(f) ? NaN : f;
+    }
+
+    // Ancla: 1) data-first-child-price / data-anchor-price  2) 1er hijo -> td:nth-child(9)
+    function computeAnchorForParentRow(row){
+      var fromAttr = (row.getAttribute('data-first-child-price') || row.getAttribute('data-anchor-price') || '').trim();
+      if (fromAttr) {
+        var f = parseNum(fromAttr);
+        if (!isNaN(f) && f > 0) return f.toFixed(2);
+      }
+      // Buscar el primer hijo visual debajo del padre
+      var r = row.nextElementSibling;
+      while (r && !r.classList.contains('js-parent-row')) {
+        // PRECIO está en la columna 9 del listado de Perfiles
+        var td9 = r.querySelector('td:nth-child(9)');
+        if (td9) {
+          var f9 = parseNum(td9.textContent);
+          if (!isNaN(f9) && f9 > 0) return f9.toFixed(2);
+        }
+        // Fallbacks por si existieran en tu markup
+        var dp = r.getAttribute('data-precio');
+        if (dp) {
+          var fdp = parseNum(dp);
+          if (!isNaN(fdp) && fdp > 0) return fdp.toFixed(2);
+        }
+        var tdAlt = r.querySelector('.precio-cell,.cell-precio,[data-precio-cell]');
+        if (tdAlt) {
+          var falt = parseNum(tdAlt.textContent);
+          if (!isNaN(falt) && falt > 0) return falt.toFixed(2);
+        }
+        r = r.nextElementSibling;
+      }
+      return '';
+    }
+
+    // En el click de la fila padre (Perfiles), calcula y guarda el ancla para el show
+    document.addEventListener('click', function(e){
+      var row = e.target && e.target.closest && e.target.closest('tr.js-parent-row');
+      if (!row) return;
+      if ((row.getAttribute('data-entidad') || '') !== 'perfil') return;
+
+      // marca modo hijo y pre-calcula ancla antes de que se abra el modal
+      modal.dataset._mode = 'child';
+      modal.__anchorRow   = row;
+      modal.dataset._anchor = computeAnchorForParentRow(row);
+    }, true); // captura para correr antes del show
+
+    // En el show del modal hijo, aplica el ancla y bloquea edición
+    modal.addEventListener('show.bs.modal', function(ev){
+      if (modal.dataset._mode !== 'child') return; // solo hijo
+      var price = modal.querySelector('input[name="soles"]');
+      if (!price) return;
+
+      var anchor = modal.dataset._anchor || '';
+      if (anchor) {
+        price.value = anchor;
+        price.readOnly = true;
+        price.setAttribute('readonly','readonly');
+        price.classList.add('bg-light');
+      } else {
+        price.readOnly = false;
+        price.removeAttribute('readonly');
+        price.classList.remove('bg-light');
+        if (!price.value) price.value = '';
+      }
+    }, true);
+
+  } catch(_){}
+})();
+
+
+
+
+
+
+/* ================================
+   STREAMING FAMILIAR
+   - Hijo (click fila): título + correo/contraseña readonly
+   - Padre (botón Agregar familiar): correo/contraseña editables
+   ================================ */
+(function(){
+  'use strict';
+  if (window.__famChildEnforcerV3) return; window.__famChildEnforcerV3 = true;
+
+  var famPane  = document.getElementById('perfiles-familiar');
+  var famModal = document.getElementById('perfilFamiliarModal');
+  if (!famPane || !famModal || !window.bootstrap) return;
+
+  // Helpers
+  function $(sel, ctx){ return (ctx||document).querySelector(sel); }
+  function setRO(input, val){
+    if (!input) return;
+    input.value = val != null ? String(val) : '';
+    input.readOnly = true;
+    input.setAttribute('readonly','readonly');
+    input.classList.add('bg-light');
+    input.disabled = false; // importante: readonly, NO disabled (para que se envíe)
+  }
+  function setEditable(input, val, placeholder){
+    if (!input) return;
+    input.value = val != null ? String(val) : '';
+    input.readOnly = false;
+    input.removeAttribute('readonly');
+    input.classList.remove('bg-light');
+    input.disabled = false;
+    if (placeholder) input.placeholder = placeholder;
+  }
+
+  // 1) CLICK en fila de Familiar → abrir modo HIJO (readonly correo/contraseña)
+  // Captura de clicks SOLO dentro de la pestaña Familiar
+
+
+
+
+  // 2) BOTÓN “Agregar familiar” → abrir modo PADRE (editable correo/contraseña)
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest('.btn-add-perfil-fam, [data-modal-context="parent"]');
+    if (!btn) return;
+    famModal.dataset.mode = 'parent';
+    famModal.dataset.prefill = '';
+    delete famModal.dataset.correo;
+    delete famModal.dataset.pass;
+    // El título lo dejas como “Agregar familiar” (o el que tengas por defecto)
+  }, true);
+
+  // 3) En show: aplicar readonly/edición según modo
+  famModal.addEventListener('show.bs.modal', function(){
+    var form = $('form', famModal);
+    if (!form) return;
+
+    var correoInput = $('input[name="correo"]', form) || $('input[name="email"]', form);
+    var passInput   = $('input[name="password_plain"]', form);
+
+    if ((famModal.dataset.mode || '') === 'child') {
+      // Hijo: correo y pass readonly siempre
+      setRO(correoInput, famModal.dataset.correo || '');
+      setRO(passInput, famModal.dataset.pass || '1234');
+
+      // Título redundante (por si otro script lo cambia)
+      var t = $('#perfilFamiliarModalLabel');
+      if (t && famModal.dataset.correo) t.textContent = 'Agregar a correo: ' + famModal.dataset.correo;
+
+    } else {
+      // Padre: ambos editables
+      setEditable(correoInput, '', 'Correo');
+      setEditable(passInput,   '', 'Contraseña');
+    }
+  }, true);
+
+  // 4) Limpieza al cerrar
+  famModal.addEventListener('hidden.bs.modal', function(){
+    delete famModal.dataset.mode;
+    delete famModal.dataset.prefill;
+    delete famModal.dataset.correo;
+    delete famModal.dataset.pass;
+  }, true);
+
+})();
+
+/* ================================
+   FAMILIAR: abrir modal hijo correcto + título + readonly + submit nativo
+   ================================ */
+(function(){
+  'use strict';
+  if (window.__famChildOpenFixFinal) return; window.__famChildOpenFixFinal = true;
+
+  var famPane  = document.getElementById('perfiles-familiar');
+  var famModal = document.getElementById('perfilFamiliarModal');
+  if (!famPane || !famModal || !window.bootstrap) return;
+
+  function q(sel, ctx){ return (ctx||document).querySelector(sel); }
+  function setRO(input, val){
+    if (!input) return;
+    input.value = val != null ? String(val) : '';
+    input.readOnly = true;
+    input.setAttribute('readonly','readonly');
+    input.classList.add('bg-light');
+    input.disabled = false; // readonly, NO disabled (para que se envíe)
+  }
+  function setEditable(input, val){
+    if (!input) return;
+    input.value = val != null ? String(val) : '';
+    input.readOnly = false;
+    input.removeAttribute('readonly');
+    input.classList.remove('bg-light');
+    input.disabled = false;
+  }
+
+  // 1) Click en FILA de Familiar → abrir SIEMPRE el modal hijo correcto
+  // ===== STREAMING FAMILIAR: click en fila padre → modal grande hijo,
+//       pero NUNCA cuando el clic viene de la celda PLAN =====
+famPane.addEventListener('click', function (e) {
+  // Ignorar:
+  // - Botones de acción (.js-row-action)
+  // - Enlaces, botones, elementos con role="button"
+  // - Elementos marcados con data-no-row-modal="1"
+  // - Y la celda de plan (td.plan-cell-perfil), que tiene su propio modal chico
+  if (
+    e.target.closest('.js-row-action, a, button, [role="button"], [data-no-row-modal="1"]') ||
+    e.target.closest('td.plan-cell-perfil')
+  ) {
+    return;
+  }
+
+  var tr = e.target.closest && e.target.closest('tr.js-parent-row');
+  if (!tr) return;
+
+  var entidad = (tr.getAttribute('data-entidad') || '').toLowerCase();
+  if (entidad !== 'perfil_fam') return;
+
+  // Cortar otros listeners que podrían abrir modales equivocados
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
+  // 👉 Abrir SOLO el modal grande de familiar a partir de la fila
+  openFamChildFromRow(tr);
+}, true);
+
+ // captura para ganar a otros listeners
+
+  // 2) Botón "Agregar familiar" (PADRE) → modo editable
+  document.addEventListener('click', function(e){
+    var btn = e.target.closest && e.target.closest('.btn btn-primary.btn-add-perfil-fam, .btn-add-perfil-fam, [data-modal-context="parent"]');
+    if (!btn) return;
+    delete famModal.dataset.prefill;
+    famModal.dataset.mode = 'parent';
+  }, true);
+
+  // 3) En show: aplica readonly/edición según modo + repara backdrop
+  famModal.addEventListener('show.bs.modal', function(){
+    // Quita posibles atributos "estáticos" heredados
+    famModal.removeAttribute('data-bs-backdrop');
+    famModal.removeAttribute('data-bs-keyboard');
+
+    var form = q('form', famModal); if (!form) return;
+    var correoInput = q('input[name="correo"]', form) || q('input[name="email"]', form);
+    var passInput   = q('input[name="password_plain"]', form);
+
+    if ((famModal.dataset.mode || '') === 'child') {
+      setRO(correoInput, famModal.dataset.correo || '');
+      setRO(passInput,   famModal.dataset.pass   || '1234');
+
+      var title = q('#perfilFamiliarModalLabel');
+      if (title && famModal.dataset.correo) title.textContent = 'Agregar a correo: ' + famModal.dataset.correo;
+    } else {
+      setEditable(correoInput, '');
+      setEditable(passInput,   '');
+      var title = q('#perfilFamiliarModalLabel');
+      if (title) title.textContent = 'Agregar familiar';
+    }
+  }, true);
+
+  // 4) Submit nativo (evita preventDefault ajenos en burbuja)
+  famModal.addEventListener('submit', function(ev){
+    // No hacemos preventDefault; sólo impedimos que otros listeners en burbuja lo anulen
+    ev.stopPropagation(); // seguimos permitiendo envío nativo
+  }, true); // captura: ganamos a handlers globales que previenen
+
+  // 5) Limpieza al cerrar
+  famModal.addEventListener('hidden.bs.modal', function(){
+    delete famModal.dataset.mode;
+    delete famModal.dataset.prefill;
+    delete famModal.dataset.correo;
+    delete famModal.dataset.pass;
+  }, true);
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* ======= Stock/Pausa: repinta color en fila tras submit ======= */
+(function () {
+  const form = document.getElementById('formPlanStockPausa');
+  if (!form || form.dataset._colorBound === '1') return;
+  form.dataset._colorBound = '1';
+
+  form.addEventListener('submit', function () {
+    // No duplicamos fetch; solo repintamos después
+    setTimeout(() => {
+      try {
+        const id   = Number(document.getElementById('spp_id')?.value || 0);
+        const tipo = (document.getElementById('spp_tipo')?.value === 'pausa') ? 'pausa' : 'stock';
+        let color  = document.getElementById('spp_color')?.value || '';
+
+        if (color === 'restablecer') color = '';
+        const allowed = ['rojo','azul','verde','blanco',''];
+        if (!allowed.includes(color)) color = '';
+
+        const cellSel = (tipo === 'pausa')
+          ? `.plan-cell-pausa[data-id="${id}"]`
+          : `.plan-cell-stock[data-id="${id}"]`;
+
+        const td = document.querySelector(cellSel);
+        const tr = td?.closest('tr');
+        if (tr) {
+          tr.dataset.color = color || '';
+          tr.classList.remove('row-color-rojo','row-color-azul','row-color-verde','row-color-blanco');
+          if (color) tr.classList.add('row-color-' + color);
+        }
+      } catch (_) {}
+    }, 0);
+  }, true);
+})();
+
+/* ======= (Desactivado) Cualquier hook de Streaming Familiar aquí =======
+   La lógica de abrir modal, título, correo/contraseña y precio del hijo/padre
+   se centraliza en app_familiar_modal_fix.js para evitar conflictos.
+========================================================================= */
+
+/* ======= (Mantener desactivado) lockParentPrice en #perfilModal ======= */
+(function lockParentPrice(){
+  try {
+    var modal = document.getElementById('perfilModal');
+    var head  = document.getElementById('precioPerfilHead');
+    if (!modal || !head) return;
+    /* patched: disable lockParentPrice to avoid readonly bleed */
+    return;
+  } catch(e){}
+})();
+
+
+
+
+
+
+
+
+
+
+
+
+
+// === OVERRIDE: Click en FILA de PERFILES abre SIEMPRE el modal de HIJO ===
+;(function () {
+  'use strict';
+  if (window.__PerfilesChildRowOverride) return;
+  window.__PerfilesChildRowOverride = true;
+
+  document.addEventListener('click', function (e) {
+    // Solo filas padre dentro de la tabla PERFILES
+    const row = e.target.closest('#perfilesTable tr.js-parent-row');
+    if (!row) return;
+
+    // No disparar si el click viene de:
+    // - botones / links / acciones
+    // - la celda de PLAN
+    // - elementos marcados con data-no-row-modal
+    if (
+      e.target.closest('.js-row-action') ||
+      e.target.closest('a, button, [role="button"]') ||
+      e.target.closest('[data-no-row-modal="1"]') ||
+      e.target.closest('td.plan-cell-perfil')
+    ) {
+      return;
+    }
+
+    // Cortar aquí para que otros listeners viejos no se metan
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
+    // Desde PERFILES queremos abrir el modal de HIJO (perfil_fam)
+    const entidad = 'perfil_fam';
+
+    if (typeof openPrefillModal === 'function') {
+      // Usamos el mismo helper que el resto del sistema
+      openPrefillModal(entidad, {
+        correo:          row.getAttribute('data-correo') || '',
+        firstChildPrice: row.getAttribute('data-first-child-price') || '',
+        password:        row.getAttribute('data-password') || '',
+        soles:           row.getAttribute('data-soles') || '',
+        plan:            row.getAttribute('data-plan') || 'premium',
+        combo:           row.getAttribute('data-combo') || '0',
+        streaming_id:    row.getAttribute('data-streaming_id') || ''
+      });
+    } else {
+      // Fallback por si acaso cambia el helper en el futuro
+      const famModal = document.getElementById('perfilFamiliarModal');
+      if (!famModal || !window.bootstrap) return;
+
+      famModal.dataset.prefill       = '1';
+      famModal.dataset.correo        = row.getAttribute('data-correo') || '';
+      famModal.dataset.password      = row.getAttribute('data-password') || '';
+      famModal.dataset.soles         = row.getAttribute('data-soles') || '';
+      famModal.dataset.plan          = row.getAttribute('data-plan') || 'premium';
+      famModal.dataset.combo         = row.getAttribute('data-combo') || '0';
+      famModal.dataset.streaming_id  = row.getAttribute('data-streaming_id') || '';
+
+      const modalInstance = bootstrap.Modal.getOrCreateInstance(famModal);
+      modalInstance.show();
+    }
+  }, true);
+})();
+
+// Helper genérico: setear fecha_inicio = hoy y fecha_fin = hoy + N días
+window.setDefaultFechas = function (form, days) {
+  if (!form) return;
+  const dias = typeof days === 'number' ? days : 30;
+
+  const today = new Date();
+  const end   = new Date(today);
+  end.setDate(end.getDate() + dias);
+
+  const yyyyMmDd = d => d.toISOString().slice(0, 10);
+
+  const fi = form.querySelector('[name="fecha_inicio"]');
+  const ff = form.querySelector('[name="fecha_fin"]');
+
+  // Solo sobreescribe si están vacías, para no pisar ediciones
+  if (fi && !fi.value) fi.value = yyyyMmDd(today);
+  if (ff && !ff.value) ff.value = yyyyMmDd(end);
+};
+
+})();  // 🔚 Cierre del bloque principal
+
+
+
+;(function () {
+  'use strict';
+  if (window.__famPlanMiniModalV4__) return;
+  window.__famPlanMiniModalV4__ = true;
+
+  const SMALL_MODAL_ID = 'modalCambiarPlanFamiliar';
+
+  // Interceptar clic en la celda PLAN del PADRE (familiar)
+  document.addEventListener('click', function (e) {
+    const cell = e.target.closest('.plan-cell-familiar[data-no-row-modal="1"]');
+    if (!cell) return;
+
+    // Bloquear que llegue a Bootstrap (y por tanto al modal grande)
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === 'function') {
+      e.stopImmediatePropagation();
+    }
+
+    const row   = cell.closest('tr.js-parent-row[data-entidad="familiar"]');
+    const id    = cell.getAttribute('data-id')   || (row ? row.getAttribute('data-id') : '') || '';
+    const plan  = (cell.getAttribute('data-plan') || (row ? row.getAttribute('data-plan') : '') || '').toLowerCase();
+    const color = row ? (row.getAttribute('data-color') || '') : '';
+
+    const modalEl = document.getElementById(SMALL_MODAL_ID);
+    if (!modalEl) {
+      console.warn('No se encontró el modal chico de familiar #' + SMALL_MODAL_ID);
+      return;
+    }
+
+    const planIdInput  = modalEl.querySelector('#famPlanId');
+    const planSelect   = modalEl.querySelector('#famPlanSelect');
+    const colorSelect  = modalEl.querySelector('#famColorSelect');
+    const enviarSelect = modalEl.querySelector('#famEnviarASelect');
+
+    if (planIdInput) {
+      planIdInput.value = id;
+    }
+
+    if (planSelect) {
+      const opts  = Array.from(planSelect.options);
+      const match = opts.find(function (o) {
+        return String(o.value || '').toLowerCase() === plan;
+      });
+      planSelect.value = match ? match.value : (plan || 'individual');
+    }
+
+    if (colorSelect) {
+      const c     = (color || '').toLowerCase();
+      const opts  = Array.from(colorSelect.options);
+      const match = opts.find(function (o) {
+        return String(o.value || '').toLowerCase() === c;
+      });
+      colorSelect.value = match ? match.value : '';
+    }
+
+    if (enviarSelect) {
+      // Por defecto, mantener en perfiles (no mover)
+      enviarSelect.value = 'none';
+    }
+
+    // Abrir modal chico
+    var modalInstance = bootstrap.Modal.getOrCreateInstance(modalEl);
+    modalInstance.show();
+  }, true); // usamos captura para adelantarnos a Bootstrap
+})();
+
+
+
+
+
+
+
+
+
+
+;(function () {
+  'use strict';
+
+  document.addEventListener('click', async function (ev) {
+    const btn = ev.target.closest('.btnDeleteFamiliar');
+    if (!btn) return;
+
+    ev.preventDefault();
+
+    const tr = btn.closest('tr');
+    if (!tr) return;
+
+    const id = btn.getAttribute('data-id');
+    if (!id) return;
+
+    const isParent    = tr.classList.contains('js-parent-row');
+    const hasChildren = String(tr.dataset.hasChild || '') === '1';
+
+    const SwalRef = typeof Swal !== 'undefined' ? Swal : null;
+
+    // Confirmación
+    if (SwalRef) {
+      const res = await SwalRef.fire({
+        icon: 'warning',
+        title: '¿Eliminar registro?',
+        text: 'Esta acción no se puede deshacer.',
+        showCancelButton: true,
+        confirmButtonText: 'Sí, eliminar',
+        cancelButtonText: 'Cancelar'
+      });
+      if (!res.isConfirmed) return;
+    } else {
+      if (!confirm('¿Eliminar registro?')) return;
+    }
+
+    // 🔁 Si es PADRE → usamos el controlador de PERFILES
+    if (isParent) {
+      // Creamos un form oculto que poste a PerfilController.php
+      const form = document.createElement('form');
+      form.method = 'POST';
+      form.action = '../app/controllers/PerfilController.php'; // 👈 ajusta el path si hace falta
+
+      const inAction = document.createElement('input');
+      inAction.type = 'hidden';
+      inAction.name = 'action';
+      inAction.value = 'delete';
+
+      const inId = document.createElement('input');
+      inId.type = 'hidden';
+      inId.name = 'id';
+      inId.value = id;
+
+      // opcional: para que el controller sepa a dónde regresar
+      const inBack = document.createElement('input');
+      inBack.type = 'hidden';
+      inBack.name = 'back';
+      inBack.value = window.location.href;
+
+      form.appendChild(inAction);
+      form.appendChild(inId);
+      form.appendChild(inBack);
+      document.body.appendChild(form);
+      form.submit(); // 👈 aquí ya entra a PerfilModel::delete()
+
+      return;
+    }
+
+    // 👇 Si NO es padre (es hijo), seguimos usando tu endpoint actual vía AJAX
+    try {
+      const resp = await fetch('actions/perfil_familiar_delete.php', { // ajusta si se llama distinto
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8' },
+        body: 'id=' + encodeURIComponent(id)
+      });
+      const js = await resp.json().catch(() => ({}));
+      if (!resp.ok || !js.ok) {
+        throw new Error(js.error || 'No se pudo eliminar');
+      }
+
+      tr.remove();
+
+      if (SwalRef) {
+        await SwalRef.fire({
+          icon: 'success',
+          title: 'Eliminado',
+          text: 'Registro eliminado correctamente.'
+        });
+      }
+    } catch (err) {
+      console.error('Error al borrar familiar', err);
+      if (SwalRef) {
+        await SwalRef.fire({
+          icon: 'error',
+          title: 'Error',
+          text: err.message || 'No se pudo eliminar.'
+        });
+      } else {
+        alert('Error al eliminar: ' + (err.message || 'desconocido'));
+      }
+    }
+  }, false);
+})();
 

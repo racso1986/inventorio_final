@@ -8953,14 +8953,13 @@ document.addEventListener('shown.bs.modal', function (ev) {
       var pass    = (form.querySelector('#iptv_password')?.value || '').trim();
       var urlVal  = (form.querySelector('#iptv_url')?.value || '').trim();
 
-      /*if (!usuario || !pass || !urlVal) {
+      if (!usuario || !pass || !urlVal) {
         (window.Swal
           ? Swal.fire({ icon:'warning', title:'Campos incompletos', text:'Usuario, contraseña y URL son obligatorios.' })
           : alert('Usuario, contraseña y URL son obligatorios.')
         );
         return;
-      }/*
-      
+      }
       if (!/^https?:\/\//i.test(urlVal)) urlVal = 'https://' + urlVal;
 
       var fd = new FormData(form);
@@ -10770,6 +10769,7 @@ function isChildModal(modal){
 
     // 2) En cualquier otro caso lo tratamos como HIJO (apertura programática o desde filas)
     modal.addEventListener('show.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._openMode !== 'parent') modal.dataset._openMode = 'child';
       var price = modal.querySelector('input[name="soles"]');
       if (price) { price.dataset._userTyped = '0'; }
@@ -10777,6 +10777,7 @@ function isChildModal(modal){
 
     // 3) Prefill tardío (tras otros listeners): SOLO padre
     modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._openMode !== 'parent') return;
       var price = modal.querySelector('input[name="soles"]');
       if (!price) return;
@@ -10826,6 +10827,7 @@ function isChildModal(modal){
 
     // 7) Limpieza al cerrar
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       delete modal.dataset._openMode;
       delete modal.dataset._lastHead;
       delete modal.dataset._lastPrice;
@@ -10870,11 +10872,13 @@ function isChildModal(modal){
 
     // En otras aperturas, es HIJO
     modal.addEventListener('show.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._mode !== 'parent') modal.dataset._mode = 'child';
     }, true);
 
     // Al mostrar: en PADRE fijar precio, poner readonly y bloquear cambios externos
     modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var price = getPrice(); if (!price) return;
 
       if (modal.dataset._mode === 'parent') {
@@ -10931,6 +10935,7 @@ function isChildModal(modal){
 
     // Limpieza al cerrar
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       delete modal.dataset._mode;
       delete modal.dataset._lockVal;
       var price = getPrice(); if (price){
@@ -10958,7 +10963,9 @@ function isChildModal(modal){
 (function(){
   try {
     var modal = document.getElementById('perfilModal');
-    var head  = document.getElementById('precioPerfilHead');
+    
+    // neutralized for perfilModal
+    return;var head  = document.getElementById('precioPerfilHead');
     if (!modal || !head) return;
     if (window.__pfPriceSwapBound) return; window.__pfPriceSwapBound = true;
 
@@ -11070,6 +11077,7 @@ function isChildModal(modal){
 
     // Limpieza al cerrar
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var form = qForm();
       if (!form) return;
       // limpiar referencias internas y dataset
@@ -11163,6 +11171,7 @@ function isChildModal(modal){
 
     // 2) Al abrir el modal de HIJO, aplicar el ancla si existe; si no, permitir escribir
     modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._mode !== 'child') return; // solo hij@
       var price = qPrice(); if (!price) return;
 
@@ -11183,6 +11192,7 @@ function isChildModal(modal){
 
     // 3) Al cerrar, limpiar estado
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       delete modal.dataset._mode;
       delete modal.dataset._anchor;
       modal.__anchorRow = null;
@@ -11395,7 +11405,9 @@ window.onPerfilChildCreated = function(response){
    ============================================================================= */
 (function(){
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   var form = modal.querySelector('form');
   if (!form) return;
 
@@ -11412,9 +11424,12 @@ window.onPerfilChildCreated = function(response){
     (form.querySelectorAll('input[type="hidden"][name="soles"]')||[]).forEach(function(x){ x.remove(); });
   }
 
-  modal.addEventListener('show.bs.modal', function(){ dropHiddenSoles(); }, true);
-  modal.addEventListener('shown.bs.modal', function(){ dedupeSoles(); }, true);
-  modal.addEventListener('hidden.bs.modal', function(){ dropHiddenSoles(); }, true);
+  modal.addEventListener('show.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return; dropHiddenSoles(); }, true);
+  modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return; dedupeSoles(); }, true);
+  modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return; dropHiddenSoles(); }, true);
   form.addEventListener('submit', function(){ dedupeSoles(); }, true);
 })();
 
@@ -11440,7 +11455,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   var pane  = document.getElementById('perfiles');
   var modal = document.getElementById('perfilModal');
-  if (!pane || !modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!pane || !modal) return;
 
   function qHead(){ return document.getElementById('precioPerfilHead'); }
   function qPrice(){ return modal.querySelector('#childPriceSlot input[name="soles"]') || modal.querySelector('input[name="soles"]'); }
@@ -11458,6 +11475,7 @@ window.onPerfilChildCreated = function(response){
 
   // Seguridad: si el modal se abre específicamente con el botón de agregar
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (ev.relatedTarget && ev.relatedTarget.classList.contains('btn-add-perfil')) {
       var head = qHead(); var price = qPrice();
       if (price && head) { price.value = head.value || ''; }
@@ -11610,7 +11628,9 @@ window.onPerfilChildCreated = function(response){
 // [REEMPLAZO COMPLETO] — HIJO: bloquear precio solo si hay ancla; si no, dejar libre
 (function(){
   try {
-    var modal = document.getElementById('perfilModal'); // modal "Agregar a correo"
+    var modal = document.getElementById('perfilModal'); 
+    // neutralized for perfilModal
+    return;// modal "Agregar a correo"
     if (!modal) return;
     if (window.__pfChildSwapBoundV4) return; window.__pfChildSwapBoundV4 = true;
 
@@ -11626,6 +11646,7 @@ window.onPerfilChildCreated = function(response){
     }, true);
 
     modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var form = qForm(); if (!form) return;
       var slot = qSlot(); if (!slot) return;
 
@@ -11681,6 +11702,7 @@ window.onPerfilChildCreated = function(response){
     }, true);
 
     modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       // reubica el real dentro del slot si lo sacamos
       var slot = qSlot();
       if (slot && modal.__childReal && !modal.__childReal.isConnected) {
@@ -11733,6 +11755,7 @@ window.onPerfilChildCreated = function(response){
 
   // En show: si NO viene del botón "Agregar perfil", fuerzo modo hijo limpio
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // padre: no tocar aquí
 
@@ -11778,7 +11801,9 @@ window.onPerfilChildCreated = function(response){
 // === CHILD APPLY (en shown): si NO hay ancla → campo vacío y editable; si hay → bloquear
 (function(){
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildApplyOnce) return; window.__pfChildApplyOnce = true;
 
   function qForm(){ return modal.querySelector('form') || modal; }
@@ -11786,6 +11811,7 @@ window.onPerfilChildCreated = function(response){
   function qReal(){ return modal.querySelector('#childPriceSlot input[name="soles"]'); }
 
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // padre: otro flujo
 
@@ -11841,6 +11867,7 @@ window.onPerfilChildCreated = function(response){
 
   // al cerrar: reponer el input real en el slot y limpiar flags
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var slot = qSlot();
     if (slot && modal.__childReal && !modal.__childReal.isConnected) {
       slot.appendChild(modal.__childReal);
@@ -11887,7 +11914,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   'use strict';
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildHardGuard) return; window.__pfChildHardGuard = true;
 
   // Helpers
@@ -11911,6 +11940,7 @@ window.onPerfilChildCreated = function(response){
 
   // 2) show.bs.modal: si NO viene del botón "Agregar perfil", fuerzo modo HIJO limpio
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // PADRE no se toca aquí
 
@@ -11941,6 +11971,7 @@ window.onPerfilChildCreated = function(response){
 
   // 3) shown.bs.modal: blindaje contra reinyectores (observador corto)
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var isParent = !!(ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil'));
     if (isParent) return; // PADRE: no aplican estos blindajes
 
@@ -11984,6 +12015,7 @@ window.onPerfilChildCreated = function(response){
 
   // 4) hidden: limpieza de estado
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     delete modal.dataset._mode;
     delete modal.dataset._childAnchor;
   }, true);
@@ -12016,7 +12048,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   var pane  = document.getElementById('perfiles');
   var modal = document.getElementById('perfilModal');
-  if (!pane || !modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!pane || !modal) return;
 
   function qHead(){ return document.getElementById('precioPerfilHead'); }
   function qPrice(){ return modal.querySelector('#childPriceSlot input[name="soles"]') || modal.querySelector('input[name="soles"]'); }
@@ -12034,6 +12068,7 @@ window.onPerfilChildCreated = function(response){
 
   // show: si viene del botón de agregar, repite el prefill
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil')) {
       var head = qHead(), inp = qPrice();
       if (head && inp) { inp.value = head.value || ''; }
@@ -12071,7 +12106,9 @@ window.onPerfilChildCreated = function(response){
 // === HOTFIX: Hijo SIN ancla => precio 100% editable (quita readonly heredado) ===
 (function(){
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildUnlockFix) return; window.__pfChildUnlockFix = true;
 
   function qSlot(){ return modal.querySelector('#childPriceSlot'); }
@@ -12086,6 +12123,7 @@ window.onPerfilChildCreated = function(response){
   }
 
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     // Si viene del botón "Agregar perfil" es PADRE => no tocar
     if (ev.relatedTarget && ev.relatedTarget.classList && ev.relatedTarget.classList.contains('btn-add-perfil')) return;
 
@@ -12183,7 +12221,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   'use strict';
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildUltraFix) return; window.__pfChildUltraFix = true;
 
   function qForm(){ return modal.querySelector('form') || modal; }
@@ -12228,6 +12268,7 @@ window.onPerfilChildCreated = function(response){
   }, true);
 
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return;
     modal.dataset._mode = 'child';
     Promise.resolve().then(function(){
@@ -12237,6 +12278,7 @@ window.onPerfilChildCreated = function(response){
   }, true);
 
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return;
     var anchor = modal.dataset._childAnchor || '';
     if (anchor !== '') return;
@@ -12283,6 +12325,7 @@ window.onPerfilChildCreated = function(response){
   }, true);
 
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     delete modal.dataset._mode;
     delete modal.dataset._childAnchor;
   }, true);
@@ -12313,7 +12356,9 @@ window.onPerfilChildCreated = function(response){
 (function(){
   'use strict';
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
   if (window.__pfChildCanonicalV7) return; window.__pfChildCanonicalV7 = true;
 
   // Helpers
@@ -12354,12 +12399,14 @@ window.onPerfilChildCreated = function(response){
 
   // 2) show: si no es PADRE, limpiar residuos que reinyectan/bloquean
   modal.addEventListener('show.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return; // PADRE: no tocamos
     cleanupResidues();
   }, true);
 
   // 3) shown: aplicar reglas del hijo
   modal.addEventListener('shown.bs.modal', function(ev){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (isParentOpen(ev)) return; // PADRE: fuera
     var slot = qSlot(); var form = qForm();
     if (!slot || !form) return;
@@ -12421,6 +12468,7 @@ window.onPerfilChildCreated = function(response){
 
   // 4) hidden: limpiar flags y reponer real si hiciera falta
   modal.addEventListener('hidden.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     cleanupResidues();
     delete modal.dataset._childAnchor;
   }, true);
@@ -12440,9 +12488,12 @@ window.onPerfilChildCreated = function(response){
 
 (function(){
   var modal = document.getElementById('perfilModal');
-  if (!modal) return;
+  
+    // neutralized for perfilModal
+    return;if (!modal) return;
 
   modal.addEventListener('shown.bs.modal', function () {
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var form = modal.querySelector('form');
     if (!form) return;
 
@@ -12510,6 +12561,7 @@ window.onPerfilChildCreated = function(response){
   if (!modal) return;
 
   modal.addEventListener('show.bs.modal', function (ev) {
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var trigger = ev.relatedTarget;
     // Si no vino desde una fila, no hacemos nada (esto deja libre al padre y al primer hijo)
     if (!trigger || trigger.tagName !== 'TR') return;
@@ -12573,6 +12625,7 @@ window.onPerfilChildCreated = function(response){
   if (!modal) return;
 
   modal.addEventListener('shown.bs.modal', function (ev) {
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     var trigger = ev.relatedTarget;
     // Solo aplica cuando abres desde una FILA (TR) y esa fila ya tiene primer hijo
     if (!trigger || trigger.tagName !== 'TR') return;
@@ -12638,6 +12691,7 @@ window.onPerfilChildCreated = function(response){
   });
 
   modal.addEventListener('hidden.bs.modal', function () {
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
     if (modal.__childLockObs) { modal.__childLockObs.disconnect(); modal.__childLockObs = null; }
   });
 })();
@@ -12717,10 +12771,12 @@ window.onPerfilChildCreated = function(response){
 
     // cualquier otra apertura => HIJO
     modal.addEventListener('show.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       if (modal.dataset._mode !== 'parent') modal.dataset._mode = 'child';
     }, true);
 
     modal.addEventListener('shown.bs.modal', function(){
+    var ev = ev; if (ev && ev.target && ev.target.id === 'perfilModal') return;
       var form = qForm(); if (!form) return;
       var slot = rebuildSlot(form); if (!slot) return;
 
@@ -13621,6 +13677,89 @@ window.onPerfilChildCreated = function(response){
 })();
 
 
+// === FAMILIAR: Agregar (cabecera) / Editar (botón) — sin tocar el flujo Hijo ===
+(function () {
+  const m = document.getElementById('perfilFamiliarModal');
+  if (!m) return;
 
+  function $(sel) { return m.querySelector(sel); }
+  function set(sel, v) { const el = $(sel); if (el) el.value = (v == null ? '' : String(v)); }
+  function today() { const d = new Date(); return d.toISOString().slice(0,10); }
+  function inNDays(n) { const d = new Date(); d.setDate(d.getDate() + n); return d.toISOString().slice(0,10); }
 
+  function clearFormForAdd() {
+    const f = m.querySelector('form'); if (!f) return;
+    f.reset();
+    ['correo','password_plain','wa_cc','wa_local','perfil','soles'].forEach(n => set(`[name="${n}"]`, ''));
+    set('select[name="combo"]', '0');
+    set('select[name="estado"]', 'activo');
+    set('select[name="dispositivo"]', 'tv');
+    set('input[name="fecha_inicio"]', today());
+    set('input[name="fecha_fin"]', inNDays(31));
+    ['correo','password_plain'].forEach(n => {
+      const el = $(`input[name="${n}"]`);
+      if (el) { el.removeAttribute('readonly'); el.classList.remove('bg-light'); }
+    });
+  }
+
+  m.addEventListener('show.bs.modal', function (ev) {
+    const btn = ev.relatedTarget || null;
+    const isAddFromHead = !!(btn && btn.classList && btn.classList.contains('btn-add-perfil-fam'));
+    const isEditFromRow = !!(btn && btn.classList && btn.classList.contains('btn-edit-perfil-fam'));
+
+    if (!isAddFromHead && !isEditFromRow) return; // flujo Hijo
+
+    const titleEl  = $('#perfilFamiliarModalLabel') || m.querySelector('.modal-title');
+    const submitEl = m.querySelector('button[type="submit"]');
+
+    if (isEditFromRow) {
+      let row = {};
+      try { row = JSON.parse(btn.getAttribute('data-row') || '{}'); } catch (_) {}
+      clearFormForAdd();
+      set('input[name="action"]', 'update');
+      set('input[name="id"]', row.id);
+      set('input[name="correo"]', row.correo || '');
+      set('input[name="password_plain"]', row.password_plain || '');
+      set('input[name="fecha_inicio"]', row.fecha_inicio || today());
+      set('input[name="fecha_fin"]', row.fecha_fin || inNDays(31));
+      set('input[name="perfil"]', row.perfil || '');
+      set('input[name="soles"]', row.soles || '');
+      set('select[name="estado"]', row.estado || 'activo');
+      set('select[name="dispositivo"]', row.dispositivo || 'tv');
+      set('select[name="combo"]', (row.combo != null ? String(row.combo) : '0'));
+      if (row.whatsapp && String(row.whatsapp).charAt(0) === '+') {
+        const digits = String(row.whatsapp).replace(/\s+/g,'').replace(/^\+/,'');
+        const cc = digits.length > 9 ? digits.slice(0, digits.length - 9) : '';
+        const local = digits.length > 9 ? digits.slice(-9) : digits;
+        set('input[name="wa_cc"]', cc);
+        set('input[name="wa_local"]', local.replace(/(\d{3})(\d{3})(\d{3})/, '$1 $2 $3'));
+      }
+      if (titleEl)  titleEl.textContent = 'Editar Perfil (familiar)';
+      if (submitEl) submitEl.textContent = 'Guardar cambios';
+      ev.stopImmediatePropagation(); ev.stopPropagation();
+      return;
+    }
+
+    if (isAddFromHead) {
+      clearFormForAdd();
+      set('input[name="action"]', 'create');
+      const head = document.getElementById('precioFamiliarHead');
+      if (head && head.value) set('input[name="soles"]', head.value);
+      if (titleEl)  titleEl.textContent = 'Agregar Perfil (familiar)';
+      if (submitEl) submitEl.textContent = 'Guardar';
+      ev.stopImmediatePropagation(); ev.stopPropagation();
+      return;
+    }
+  }, true);
+
+  m.addEventListener('hidden.bs.modal', function () {
+    const f = m.querySelector('form'); if (f) f.reset();
+    delete m.dataset.context;
+    delete m.dataset.mode;
+    ['correo','password_plain'].forEach(n => {
+      const el = $(`input[name="${n}"]`);
+      if (el) { el.removeAttribute('readonly'); el.classList.remove('bg-light'); }
+    });
+  });
+})();
 
